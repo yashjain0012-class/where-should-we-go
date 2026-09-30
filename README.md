@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Where should we go? 🎡
 
-## Getting Started
+A one-page decision spinner. Type a neighbourhood or city (or tap "Use my location"), pick a category (restaurants, cafés, bars, things to do), and spin a wheel of up to 8 places within 1 km. The wheel lands on one and shows its name with a Google Maps link. You can remove options before spinning.
 
-First, run the development server:
+No login, no database, no paid APIs or keys. Uses free OpenStreetMap services:
+
+- **Nominatim** turns the typed location into coordinates (`/api/geocode`)
+- **Overpass** finds named places within 1 km (`/api/places`)
+
+Both are called through Next.js route handlers so a proper `User-Agent` is sent, results are cached, and several Overpass mirrors are raced for reliability.
+
+## Develop
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Import the repo on Vercel. No environment variables are needed.
 
-## Learn More
+## Layout
 
-To learn more about Next.js, take a look at the following resources:
+- `app/page.tsx`: the page (search, categories, wheel, options, result)
+- `components/Wheel.tsx`: SVG wheel
+- `lib/spin.ts`: picks the winner first, then computes the rotation that lands on it
+- `lib/categories.ts`: category to OpenStreetMap tag mapping
+- `app/api/geocode`, `app/api/places`: the OSM proxies
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Place data © OpenStreetMap contributors.
