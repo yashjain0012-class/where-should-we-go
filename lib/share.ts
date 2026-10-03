@@ -23,6 +23,8 @@ export interface ShareState {
 const PREFIX = "#s=";
 const VERSION = "1";
 const SCALE = 1e5;
+/** Shared centres are rounded to 1/CENTRE_SNAP degrees. */
+const CENTRE_SNAP = 1000;
 
 /** Whole-hash budget. Every browser and chat app handles ~2,000 character URLs. */
 export const MAX_HASH_CHARS = 1900;
@@ -69,8 +71,11 @@ function shortLabel(label: string): string {
 
 export function encodeShare(state: ShareState): string {
   const categoryIndex = CATEGORIES.findIndex((c) => c.id === state.category);
-  const centreLat = Math.round(state.center.lat * SCALE);
-  const centreLon = Math.round(state.center.lon * SCALE);
+  // Snap the centre to 0.001 degrees (~110 m). A link made from "Use my location" would
+  // otherwise hand every recipient the sender's exact position. Places are stored as
+  // offsets from this snapped centre, so they keep their full precision.
+  const centreLat = Math.round(state.center.lat * CENTRE_SNAP) * (SCALE / CENTRE_SNAP);
+  const centreLon = Math.round(state.center.lon * CENTRE_SNAP) * (SCALE / CENTRE_SNAP);
 
   const build = (labelMax: number, nameMax: number): string => {
     const rows = state.places.slice(0, MAX_PLACES).map((p) => [

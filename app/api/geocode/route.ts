@@ -1,9 +1,13 @@
 import type { NextRequest } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 import type { GeocodeResult } from "@/lib/types";
 
 const USER_AGENT = "where-should-we-go/1.0 (decision spinner demo)";
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "geocode", 20);
+  if (limited) return limited;
+
   const q = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 120);
   if (!q) {
     return Response.json({ error: "Type a neighbourhood or city." }, { status: 400 });

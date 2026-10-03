@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { MAX_PLACES, RADIUS_METERS, getCategory } from "@/lib/categories";
+import { rateLimit } from "@/lib/rateLimit";
 import type { Place } from "@/lib/types";
 
 export const maxDuration = 45;
@@ -70,9 +71,13 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "places", 30);
+  if (limited) return limited;
+
   const sp = request.nextUrl.searchParams;
-  const lat = Number(sp.get("lat"));
-  const lon = Number(sp.get("lon"));
+  // Round to 3 decimals (~110 m): near-identical requests then share one cache entry.
+  const lat = Math.round(Number(sp.get("lat")) * 1000) / 1000;
+  const lon = Math.round(Number(sp.get("lon")) * 1000) / 1000;
   const category = getCategory(sp.get("category"));
 
   if (

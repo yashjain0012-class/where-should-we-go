@@ -55,7 +55,7 @@ for (let n = 1; n <= 8; n++) {
     assert.ok(decoded, "decoded");
     assert.equal(decoded.category, "bars");
     assert.equal(decoded.places.length, n);
-    assert.ok(Math.abs(decoded.center.lat - CENTRE.lat) < 1e-5);
+    assert.ok(Math.abs(decoded.center.lat - CENTRE.lat) < 6e-4, "centre is snapped, not exact");
     assert.equal(decoded.label, "Shoreditch, London Borough of Hackney, Greater London");
     decoded.places.forEach((p, i) => {
       assert.equal(p.name, NAMES[i]);
@@ -73,6 +73,24 @@ test("every category survives", () => {
 test("tolerates trailing punctuation added by chat apps", () => {
   const link = encodeShare(state(makePlaces(4, (i) => NAMES[i])));
   for (const tail of [")", ".", ",", ">", "!", ".)"]) assert.ok(decodeShare(link + tail), `tail ${tail}`);
+});
+
+console.log("privacy");
+function metres(a, b) {
+  return Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
+}
+test("a precise GPS centre is never exposed in the link", () => {
+  const gps = { lat: 51.123456, lon: -0.987654 };
+  const places = [{ id: "a", name: "Cafe", lat: gps.lat + 0.002, lon: gps.lon - 0.001 }];
+  const link = encodeShare({ center: gps, label: "Your location", category: "cafes", places });
+  const decoded = decodeShare(link);
+  assert.ok(decoded);
+  assert.notEqual(decoded.center.lat, gps.lat);
+  assert.notEqual(decoded.center.lon, gps.lon);
+  assert.ok(metres(decoded.center, gps) < 90, "snapped centre stays close to the real area");
+  // the exact digits must not appear anywhere in the decoded payload
+  assert.ok(!link.includes("51123456") && !link.includes("98765"));
+  assert.ok(Math.abs(decoded.places[0].lat - places[0].lat) <= 1e-5, "places keep full precision");
 });
 
 console.log("length budget");
