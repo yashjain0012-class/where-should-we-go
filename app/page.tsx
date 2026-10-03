@@ -13,10 +13,13 @@ import {
   getCategory,
   snapRadius,
 } from "@/lib/categories";
+import { fireConfetti, stopConfetti } from "@/lib/celebrate";
 import { openStates } from "@/lib/hours";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
+import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
 import { pickIndex, targetRotation } from "@/lib/spin";
+import { tickTimes } from "@/lib/ticks";
 import type { CategoryId, GeocodeResult, OpenState, Place, PlacesResponse } from "@/lib/types";
 
 // Leaflet only runs in the browser, so the map is never rendered on the server.
@@ -118,7 +121,13 @@ export default function Home() {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [shareFallbackUrl, setShareFallbackUrl] = useState<string | null>(null);
 
+  // Sound on/off, remembered between visits. Always "on" for the server render.
+  const muted = useSyncExternalStore(subscribeMuted, getMuted, () => false);
+
   const requestId = useRef(0);
+  // The wheel's current rotation, mirrored so handleSpin can read it synchronously.
+  const rotationRef = useRef(0);
+  const wheelBox = useRef<HTMLDivElement>(null);
   const spinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const radiusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,6 +148,8 @@ export default function Home() {
       if (spinTimer.current) clearTimeout(spinTimer.current);
       if (noteTimer.current) clearTimeout(noteTimer.current);
       if (radiusTimer.current) clearTimeout(radiusTimer.current);
+      stopTicks();
+      stopConfetti();
     },
     [],
   );
@@ -156,6 +167,8 @@ export default function Home() {
       }
       requestId.current++; // ignore any search still in flight
       if (spinTimer.current) clearTimeout(spinTimer.current);
+      stopTicks(); // a new wheel arrived mid-spin: cut the sound and any confetti
+      stopConfetti();
       setSpinning(false);
       setLinkProblem(false);
       setCoords({ ...shared.center, label: shared.label });
@@ -365,14 +378,42 @@ export default function Home() {
     const ms = reduced ? SPIN_MS_REDUCED : SPIN_MS;
     const index = pickIndex(options.length);
     const chosen = options[index];
+    const from = rotationRef.current;
+    const to = targetRotation(from, index, options.length, reduced ? 2 : 5);
+    rotationRef.current = to;
+    stopConfetti();
     setWinner(null);
     setDuration(ms);
-    setRotation((current) => targetRotation(current, index, options.length, reduced ? 2 : 5));
+    setRotation(to);
     setSpinning(true);
+    // Schedule the ticks now, inside the tap (browsers only allow audio after a tap), from
+    // the same curve the wheel animates with so they slow down together.
+    playTicks(tickTimes(from, to, 360 / options.length, ms), ms / 1000);
     spinTimer.current = setTimeout(() => {
       setSpinning(false);
       setWinner(chosen);
+      celebrate();
     }, ms + 60);
+  }
+
+  // Confetti from the wheel when it lands (skipped for reduced motion), and make sure the
+  // result card is on screen: on a phone it sits below the fold. A short timeout (rather than
+  // requestAnimationFrame, which pauses in background tabs) lets React render the card first.
+  function celebrate() {
+    setTimeout(() => {
+      const box = wheelBox.current;
+      if (box) {
+        const r = box.getBoundingClientRect();
+        const x = Math.min(1, Math.max(0, (r.left + r.width / 2) / window.innerWidth));
+        const y = Math.min(1, Math.max(0, (r.top + r.height * 0.4) / window.innerHeight));
+        void fireConfetti({ x, y }, SLICE_COLORS);
+      }
+      const card = document.querySelector(".result-pop");
+      if (card && card.getBoundingClientRect().bottom > window.innerHeight) {
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        card.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+      }
+    }, 50);
   }
 
   function flashNote(message: string) {
@@ -642,9 +683,15 @@ export default function Home() {
       )}
 
       <section className="flex flex-col items-center gap-6 rounded-3xl bg-white/80 p-4 pt-8 shadow-lg backdrop-blur sm:p-6 sm:pt-10">
-        <div className="relative w-full" aria-busy={!!loading}>
+        <div ref={wheelBox} className="relative w-full" aria-busy={!!loading}>
           <div className={`transition-opacity ${loading && searched ? "opacity-50" : ""}`}>
-            <Wheel places={options} rotation={rotation} spinning={spinning} durationMs={duration} />
+            <Wheel
+              places={options}
+              rotation={rotation}
+              spinning={spinning}
+              durationMs={duration}
+              winnerId={winner?.id ?? null}
+            />
           </div>
           {loading && searched && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -655,14 +702,28 @@ export default function Home() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleSpin}
-          disabled={!canSpin}
-          className="rounded-full bg-gradient-to-r from-pink-500 via-orange-500 to-yellow-400 px-12 py-4 text-xl font-extrabold text-white shadow-lg transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
-        >
-          {spinning ? "Spinning…" : winner ? "Spin again" : "Spin!"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleSpin}
+            disabled={!canSpin}
+            className="rounded-full bg-gradient-to-r from-pink-500 via-orange-500 to-yellow-400 px-12 py-4 text-xl font-extrabold text-white shadow-lg transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+          >
+            {spinning ? "Spinning…" : winner ? "Spin again" : "Spin!"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMuted(!muted);
+              if (muted) unlockAudio(); // turning sound back on is a tap: prepare audio now
+            }}
+            aria-label={muted ? "Turn sound on" : "Turn sound off"}
+            title={muted ? "Sound is off" : "Sound is on"}
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-xl shadow ring-1 ring-indigo-100 transition hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+          >
+            <span aria-hidden>{muted ? "🔇" : "🔊"}</span>
+          </button>
+        </div>
 
         {options.length > 0 && (
           <div className="flex w-full max-w-md flex-col items-stretch gap-2">

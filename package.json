@@ -8,10 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "test:share": "tsc lib/share.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-share.mjs",
-    "test:filters": "tsc lib/overpass.ts lib/hours.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-filters.mjs"
+    "test:filters": "tsc lib/overpass.ts lib/hours.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-filters.mjs",
+    "test:ticks": "tsc lib/ticks.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-ticks.mjs"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",
+    "canvas-confetti": "^1.9.4",
     "leaflet": "^1.9.4",
     "next": "16.3.7",
     "opening_hours": "^3.15.0",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

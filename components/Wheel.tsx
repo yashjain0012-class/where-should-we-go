@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+import { cssSpinEasing } from "@/lib/ticks";
 import type { Place } from "@/lib/types";
 
 export const SLICE_COLORS = [
@@ -36,13 +38,23 @@ interface WheelProps {
   rotation: number;
   spinning: boolean;
   durationMs: number;
+  /** The slice that was landed on: it bounces (unless reduced motion) and gets an outline. */
+  winnerId?: string | null;
 }
 
-export default function Wheel({ places, rotation, spinning, durationMs }: WheelProps) {
+/** How far (in SVG units) the winning slice pops outward during its bounce. */
+const BOUNCE_DISTANCE = 7;
+
+export default function Wheel({ places, rotation, spinning, durationMs, winnerId = null }: WheelProps) {
   const n = places.length;
   const slice = 360 / Math.max(n, 1);
   const fontSize = n <= 4 ? 10 : 8.5;
   const maxChars = Math.floor(62 / (fontSize * 0.55));
+
+  // The winner is drawn last so it sits on top of its neighbours while it bounces.
+  const drawOrder = places
+    .map((p, i) => ({ place: p, index: i }))
+    .sort((a, b) => Number(a.place.id === winnerId) - Number(b.place.id === winnerId));
 
   return (
     <div className="relative mx-auto aspect-square w-full max-w-[26rem]">
@@ -63,9 +75,8 @@ export default function Wheel({ places, rotation, spinning, durationMs }: WheelP
         className="h-full w-full rounded-full shadow-xl ring-8 ring-white"
         style={{
           transform: `rotate(${rotation}deg)`,
-          transition: spinning
-            ? `transform ${durationMs}ms cubic-bezier(0.12, 0.6, 0.1, 1)`
-            : "none",
+          // The same curve lib/ticks.ts uses to time the ticking sound.
+          transition: spinning ? `transform ${durationMs}ms ${cssSpinEasing()}` : "none",
           willChange: "transform",
         }}
       >
@@ -92,35 +103,46 @@ export default function Wheel({ places, rotation, spinning, durationMs }: WheelP
               </text>
             </>
           )}
-          {n === 1 && <circle cx={CX} cy={CY} r={R} fill={SLICE_COLORS[0]} />}
-          {n > 1 &&
-            places.map((p, i) => (
-              <path
-                key={p.id}
-                d={slicePath(i * slice, (i + 1) * slice)}
-                fill={SLICE_COLORS[i % SLICE_COLORS.length]}
-                stroke="#fff"
-                strokeWidth="1"
-              />
-            ))}
-          {n > 0 &&
-            places.map((p, i) => (
-              <text
-                key={`t-${p.id}`}
-                x={CX + 24}
-                y={CY}
-                dominantBaseline="central"
-                fontSize={fontSize}
-                fontWeight="700"
-                fill="#fff"
-                stroke="rgba(0,0,0,.45)"
-                strokeWidth="0.6"
-                paintOrder="stroke"
-                transform={`rotate(${(i + 0.5) * slice - 90} ${CX} ${CY})`}
-              >
-                {truncate(p.name, maxChars)}
-              </text>
-            ))}
+          {drawOrder.map(({ place: p, index: i }) => {
+            const isWinner = p.id === winnerId;
+            // Outward direction of this slice's middle, measured clockwise from the top.
+            const mid = ((i + 0.5) * slice * Math.PI) / 180;
+            const bounce = isWinner
+              ? ({
+                  "--dx": `${(Math.sin(mid) * BOUNCE_DISTANCE).toFixed(2)}px`,
+                  "--dy": `${(-Math.cos(mid) * BOUNCE_DISTANCE).toFixed(2)}px`,
+                } as CSSProperties)
+              : undefined;
+            return (
+              <g key={p.id} className={isWinner ? "slice-bounce" : undefined} style={bounce}>
+                {n === 1 ? (
+                  <circle cx={CX} cy={CY} r={R} fill={SLICE_COLORS[0]} />
+                ) : (
+                  <path
+                    d={slicePath(i * slice, (i + 1) * slice)}
+                    fill={SLICE_COLORS[i % SLICE_COLORS.length]}
+                    stroke={isWinner ? "#1e1b4b" : "#fff"}
+                    strokeWidth={isWinner ? 2.5 : 1}
+                    strokeLinejoin="round"
+                  />
+                )}
+                <text
+                  x={CX + 24}
+                  y={CY}
+                  dominantBaseline="central"
+                  fontSize={fontSize}
+                  fontWeight="700"
+                  fill="#fff"
+                  stroke="rgba(0,0,0,.45)"
+                  strokeWidth="0.6"
+                  paintOrder="stroke"
+                  transform={`rotate(${(i + 0.5) * slice - 90} ${CX} ${CY})`}
+                >
+                  {truncate(p.name, maxChars)}
+                </text>
+              </g>
+            );
+          })}
           <circle cx={CX} cy={CY} r="9" fill="#fff" stroke="#1e1b4b" strokeWidth="2" />
         </svg>
       </div>

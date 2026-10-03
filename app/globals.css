@@ -17,13 +17,18 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
+/* Result card: a short spring pop-in */
 @keyframes result-pop {
   0% {
     opacity: 0;
-    transform: scale(0.85) translateY(8px);
+    transform: scale(0.6) translateY(16px);
   }
-  60% {
-    transform: scale(1.04);
+  55% {
+    opacity: 1;
+    transform: scale(1.08) translateY(-4px);
+  }
+  78% {
+    transform: scale(0.97) translateY(0);
   }
   100% {
     opacity: 1;
@@ -32,7 +37,30 @@ body {
 }
 
 .result-pop {
-  animation: result-pop 0.5s ease-out;
+  animation: result-pop 0.6s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+/* The winning wheel slice pops outward (--dx/--dy are set per slice) and settles back */
+@keyframes slice-bounce {
+  0% {
+    transform: translate(0, 0);
+  }
+  30% {
+    transform: translate(var(--dx), var(--dy));
+  }
+  52% {
+    transform: translate(calc(var(--dx) * 0.2), calc(var(--dy) * 0.2));
+  }
+  72% {
+    transform: translate(calc(var(--dx) * 0.55), calc(var(--dy) * 0.55));
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.slice-bounce {
+  animation: slice-bounce 0.9s cubic-bezier(0.3, 0.7, 0.4, 1);
 }
 
 /* Map pins (Leaflet divIcons) */
@@ -58,10 +86,32 @@ body {
   transition: transform 0.25s ease;
 }
 
+/* The winning pin bounces once, timed to land as the map's fly-in finishes (about 1.2 s),
+   then keeps a gentle pulse. */
 .pin--winner {
   transform: scale(1.45);
   border-color: #1e1b4b;
-  animation: pin-pulse 1.4s ease-out infinite;
+  animation:
+    pin-bounce 0.9s cubic-bezier(0.28, 0.84, 0.42, 1) 1s backwards,
+    pin-pulse 1.4s ease-out 1.9s infinite;
+}
+
+@keyframes pin-bounce {
+  0% {
+    transform: scale(1.45) translateY(0);
+  }
+  30% {
+    transform: scale(1.9) translateY(-18px);
+  }
+  55% {
+    transform: scale(1.35) translateY(0);
+  }
+  75% {
+    transform: scale(1.65) translateY(-7px);
+  }
+  100% {
+    transform: scale(1.45) translateY(0);
+  }
 }
 
 @keyframes pin-pulse {
@@ -98,6 +148,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .result-pop,
+  .slice-bounce,
   .pin--winner {
     animation: none;
   }

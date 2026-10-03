@@ -27,6 +27,13 @@ Notes and limits:
 - The package's typings declare a named export that doesn't exist at runtime; `lib/hours.ts` uses the default export.
 - The API validates the radius (500 to 5000 m), rounds coordinates to about 110 m so near-identical searches share a cache entry, and applies a best-effort per-IP rate limit (in-memory, so per server instance; a Vercel Firewall rate-limit rule is the real control).
 
+## The spin: sound and celebration
+
+- **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
+- **On landing:** confetti (`canvas-confetti`, loaded on demand), the winning slice pops outward and is outlined, its map pin bounces as the map arrives, and the result card springs in. On a phone the result card is scrolled into view if it landed below the fold.
+- **Reduced motion** (the device's "reduce motion" setting): the spin is shortened to about a second, and there is no confetti, no bounce and no card animation. The winner is still shown with a static outline, and the sound still follows the mute button.
+- iPhones silence Web Audio when the ringer switch is on silent.
+
 ## Map
 
 Under the wheel is a map with one numbered pin per option. Pin colours and numbers match the wheel slices and the option chips, and removing an option removes its pin. After a spin the winning pin is highlighted and the map zooms to it. Tapping any pin shows its name and a Google Maps link.
@@ -63,6 +70,7 @@ Open http://localhost:3000.
 ```bash
 npm run test:share     # share links: round trips, tampered links, privacy snapping, link-length budget
 npm run test:filters   # rings and query builder, candidate parsing, opening hours across time zones
+npm run test:ticks     # easing curve vs CSS, tick schedule (count, slowing gaps, alignment with the wheel)
 npm run build        # production build (also catches browser-only code running on the server)
 ```
 
@@ -77,6 +85,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `components/PlacesMap.tsx`: Leaflet map (browser-only)
 - `lib/spin.ts`: picks the winner first, then computes the rotation that lands on it
 - `lib/share.ts`: share-link encode, decode and validation
+- `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti
 - `lib/overpass.ts`, `lib/geo.ts`: ring query builder and nearest-first candidate parsing
 - `lib/hours.ts`: opening-hours evaluation in the place's time zone
 - `lib/rateLimit.ts`: best-effort per-IP rate limit for the API routes
