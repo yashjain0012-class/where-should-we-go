@@ -1,20 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
 import { CATEGORIES, getCategory } from "@/lib/categories";
+import { mapsUrl } from "@/lib/maps";
 import { pickIndex, targetRotation } from "@/lib/spin";
 import type { CategoryId, GeocodeResult, Place } from "@/lib/types";
+
+// Leaflet only runs in the browser, so the map is never rendered on the server.
+const PlacesMap = dynamic(() => import("@/components/PlacesMap"), {
+  ssr: false,
+  loading: () => (
+    <div aria-hidden className="h-72 w-full animate-pulse rounded-2xl bg-indigo-100 sm:h-96" />
+  ),
+});
 
 const SPIN_MS = 5000;
 const SPIN_MS_REDUCED = 1200;
 
 type Coords = { lat: number; lon: number; label: string };
-
-function mapsUrl(place: Place): string {
-  const query = encodeURIComponent(`${place.name} ${place.lat},${place.lon}`);
-  return `https://www.google.com/maps/search/?api=1&query=${query}`;
-}
 
 async function fetchJson<T>(url: string): Promise<T> {
   let res: Response;
@@ -166,6 +171,11 @@ export default function Home() {
   }
 
   const cat = getCategory(category);
+  // Stable identity, so the map doesn't re-fit its view on unrelated re-renders.
+  const mapCenter = useMemo(
+    () => (coords ? { lat: coords.lat, lon: coords.lon } : null),
+    [coords],
+  );
   const canSpin = options.length >= 2 && !spinning && !loading;
   const removedSome = fetched.length > options.length;
 
@@ -339,9 +349,11 @@ export default function Home() {
                 >
                   <span
                     aria-hidden
-                    className="h-3 w-3 shrink-0 rounded-full"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
                     style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
-                  />
+                  >
+                    {i + 1}
+                  </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
                   <button
                     type="button"
@@ -365,6 +377,18 @@ export default function Home() {
           >
             Reset options
           </button>
+        )}
+
+        {(options.length > 0 || (searched && coords)) && (
+          <div className="w-full">
+            <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-indigo-900">
+              Map
+            </h2>
+            <PlacesMap places={options} winnerId={winner?.id ?? null} center={mapCenter} />
+            <p className="mt-2 text-xs text-indigo-900/70">
+              Tap a pin for its name and a Google Maps link. Pin colours and numbers match the wheel.
+            </p>
+          </div>
         )}
       </section>
 
