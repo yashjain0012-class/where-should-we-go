@@ -50,5 +50,22 @@ export function getCategory(id: string | null): Category | undefined {
   return CATEGORIES.find((c) => c.id === id);
 }
 
+/** Slices on the wheel. */
 export const MAX_PLACES = 8;
-export const RADIUS_METERS = 1000;
+/** Nearest candidates the API returns, so filters can drop some and the wheel still fills. */
+export const POOL_SIZE = 32;
+
+export const MIN_RADIUS = 500;
+export const MAX_RADIUS = 5000;
+export const DEFAULT_RADIUS = 1000;
+export const RADIUS_STEP = 250;
+
+/** Clamp to the allowed range and snap to the slider step. */
+export function snapRadius(value: number): number {
+  const snapped = Math.round(value / RADIUS_STEP) * RADIUS_STEP;
+  return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, snapped));
+}
+
+export function formatRadius(meters: number): string {
+  return meters < 1000 ? `${meters} m` : `${meters / 1000} km`;
+}

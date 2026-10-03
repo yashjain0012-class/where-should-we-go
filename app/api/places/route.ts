@@ -1,7 +1,16 @@
 import type { NextRequest } from "next/server";
-import { MAX_PLACES, RADIUS_METERS, getCategory } from "@/lib/categories";
+import tzLookup from "tz-lookup";
+import {
+  DEFAULT_RADIUS,
+  MAX_RADIUS,
+  MIN_RADIUS,
+  formatRadius,
+  getCategory,
+  snapRadius,
+} from "@/lib/categories";
+import { buildQuery, parseCandidates, type OverpassElement } from "@/lib/overpass";
 import { rateLimit } from "@/lib/rateLimit";
-import type { Place } from "@/lib/types";
+import type { PlacesResponse } from "@/lib/types";
 
 export const maxDuration = 45;
 
@@ -12,22 +21,18 @@ const OVERPASS_ENDPOINTS = [
   "https://overpass.private.coffee/api/interpreter",
 ];
 
-interface OverpassElement {
-  type: "node" | "way" | "relation";
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: { name?: string };
+/** Bigger areas get more time, but always stay inside maxDuration. */
+function timeoutSeconds(radius: number): number {
+  return radius <= 2000 ? 20 : 28;
 }
 
-function buildQuery(lat: number, lon: number, filters: string[]): string {
-  const around = `(around:${RADIUS_METERS},${lat},${lon})`;
-  const parts = filters.map((f) => `nwr${f}["name"]${around};`).join("\n  ");
-  return `[out:json][timeout:25];\n(\n  ${parts}\n);\nout center 60;`;
+function timeoutError(message: string): Error {
+  const err = new Error(message);
+  err.name = "TimeoutError";
+  return err;
 }
 
-async function fetchOverpass(endpoint: string, query: string): Promise<OverpassElement[]> {
+async function fetchOverpass(endpoint: string, query: string, seconds: number): Promise<OverpassElement[]> {
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -35,39 +40,39 @@ async function fetchOverpass(endpoint: string, query: string): Promise<OverpassE
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({ data: query }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout((seconds + 4) * 1000),
     cache: "no-store",
   });
+  if (res.status === 504) throw timeoutError("Overpass gateway timeout");
   if (!res.ok) throw new Error(`Overpass ${res.status}`);
-  const json = (await res.json()) as { elements: OverpassElement[] };
+  const json = (await res.json()) as { elements: OverpassElement[]; remark?: string };
+  // Overpass reports a query that ran out of time or memory with a 200 and a remark.
+  if (typeof json.remark === "string" && /timed out|out of memory/i.test(json.remark)) {
+    throw timeoutError(json.remark);
+  }
   return json.elements;
 }
 
 // Ask every mirror at once and take the first good answer.
-function queryOverpass(query: string): Promise<OverpassElement[]> {
-  return Promise.any(OVERPASS_ENDPOINTS.map((e) => fetchOverpass(e, query)));
+function queryOverpass(query: string, seconds: number): Promise<OverpassElement[]> {
+  return Promise.any(OVERPASS_ENDPOINTS.map((e) => fetchOverpass(e, query, seconds)));
 }
 
 // Tiny per-instance cache so repeat searches don't hammer the free servers.
 const CACHE_TTL_MS = 10 * 60 * 1000;
-const cache = new Map<string, { at: number; elements: OverpassElement[] }>();
+const cache = new Map<string, { at: number; body: PlacesResponse }>();
 
-async function cachedQuery(key: string, query: string): Promise<OverpassElement[]> {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.elements;
-  const elements = await queryOverpass(query);
-  if (cache.size > 200) cache.clear();
-  cache.set(key, { at: Date.now(), elements });
-  return elements;
-}
-
-function shuffle<T>(items: T[]): T[] {
-  const a = [...items];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+function failure(radius: number, timedOut: boolean): Response {
+  // A smaller radius is much more likely to finish on the free servers.
+  const retryRadius = radius > 1000 ? Math.max(1000, snapRadius(radius / 2)) : undefined;
+  const problem = timedOut
+    ? `Searching ${formatRadius(radius)} took too long.`
+    : "The places service is busy right now.";
+  const hint = retryRadius ? ` Try ${formatRadius(retryRadius)}.` : " Try again in a moment.";
+  return Response.json(
+    { error: problem + hint, code: timedOut ? "timeout" : "busy", retryRadius },
+    { status: timedOut ? 504 : 502 },
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -79,6 +84,8 @@ export async function GET(request: NextRequest) {
   const lat = Math.round(Number(sp.get("lat")) * 1000) / 1000;
   const lon = Math.round(Number(sp.get("lon")) * 1000) / 1000;
   const category = getCategory(sp.get("category"));
+  const rawRadius = sp.get("radius");
+  const radiusInput = rawRadius === null ? DEFAULT_RADIUS : Number(rawRadius);
 
   if (
     !sp.get("lat") ||
@@ -87,37 +94,45 @@ export async function GET(request: NextRequest) {
     !Number.isFinite(lon) ||
     Math.abs(lat) > 90 ||
     Math.abs(lon) > 180 ||
-    !category
+    !category ||
+    !Number.isFinite(radiusInput) ||
+    radiusInput < MIN_RADIUS ||
+    radiusInput > MAX_RADIUS
   ) {
-    return Response.json({ error: "Invalid location or category." }, { status: 400 });
+    return Response.json({ error: "Invalid location, category or distance." }, { status: 400 });
+  }
+  const radius = snapRadius(radiusInput);
+
+  const key = `${category.id}:${lat.toFixed(3)},${lon.toFixed(3)}:${radius}`;
+  let body: PlacesResponse;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    body = hit.body;
+  } else {
+    const seconds = timeoutSeconds(radius);
+    let elements: OverpassElement[];
+    try {
+      elements = await queryOverpass(buildQuery(lat, lon, category.filters, radius, seconds), seconds);
+    } catch (err) {
+      const errors = err instanceof AggregateError ? err.errors : [err];
+      const timedOut = errors.some(
+        (e) => e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"),
+      );
+      return failure(radius, timedOut);
+    }
+
+    let tz: string | null = null;
+    try {
+      tz = tzLookup(lat, lon);
+    } catch {
+      tz = null;
+    }
+    body = { places: parseCandidates(elements, { lat, lon }), tz };
+    if (cache.size > 200) cache.clear();
+    cache.set(key, { at: Date.now(), body });
   }
 
-  let elements: OverpassElement[];
-  try {
-    const key = `${category.id}:${lat.toFixed(3)},${lon.toFixed(3)}`;
-    elements = await cachedQuery(key, buildQuery(lat, lon, category.filters));
-  } catch {
-    return Response.json(
-      { error: "The places service is busy right now. Try again in a moment." },
-      { status: 502 },
-    );
-  }
-
-  const seen = new Set<string>();
-  const places: Place[] = [];
-  for (const el of elements) {
-    const name = el.tags?.name?.trim();
-    const pLat = el.lat ?? el.center?.lat;
-    const pLon = el.lon ?? el.center?.lon;
-    if (!name || pLat === undefined || pLon === undefined) continue;
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    places.push({ id: `${el.type}/${el.id}`, name, lat: pLat, lon: pLon });
-  }
-
-  return Response.json(
-    { places: shuffle(places).slice(0, MAX_PLACES) },
-    { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=3600" } },
-  );
+  return Response.json(body, {
+    headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=3600" },
+  });
 }

@@ -14,7 +14,11 @@ interface PlacesMapProps {
   places: Place[];
   winnerId: string | null;
   center: { lat: number; lon: number } | null;
+  /** Places whose opening hours are unknown (only set while "Open now" is on). */
+  hoursUnknown?: ReadonlySet<string>;
 }
+
+const NO_IDS: ReadonlySet<string> = new Set();
 
 const WINNER_ZOOM = 17;
 const FIT_MAX_ZOOM = 16;
@@ -36,22 +40,34 @@ function makeIcon(L: typeof Leaflet, index: number, winner: boolean): Leaflet.Di
 }
 
 // Place names are untrusted (OpenStreetMap, and later share links): DOM nodes + textContent only.
-function buildPopup(place: Place): HTMLElement {
+function buildPopup(place: Place, hoursUnknown: boolean): HTMLElement {
   const wrap = document.createElement("div");
   const name = document.createElement("strong");
   name.className = "maps-popup-name";
   name.textContent = place.name;
+  wrap.append(name);
+  if (hoursUnknown) {
+    const note = document.createElement("span");
+    note.className = "maps-popup-note";
+    note.textContent = "Hours unknown";
+    wrap.append(note);
+  }
   const link = document.createElement("a");
   link.className = "maps-link";
   link.href = mapsUrl(place);
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = "Open in Google Maps ↗";
-  wrap.append(name, link);
+  wrap.append(link);
   return wrap;
 }
 
-export default function PlacesMap({ places, winnerId, center }: PlacesMapProps) {
+export default function PlacesMap({
+  places,
+  winnerId,
+  center,
+  hoursUnknown = NO_IDS,
+}: PlacesMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const leafletRef = useRef<typeof Leaflet | null>(null);
@@ -143,7 +159,8 @@ export default function PlacesMap({ places, winnerId, center }: PlacesMapProps) 
 
     places.forEach((place, i) => {
       const isWinner = place.id === winnerId;
-      const signature = `${i}|${isWinner}`;
+      const unknownHours = hoursUnknown.has(place.id);
+      const signature = `${i}|${isWinner}|${unknownHours}`;
       let marker = markers.get(place.id);
       if (!marker) {
         marker = L.marker([place.lat, place.lon], {
@@ -152,7 +169,7 @@ export default function PlacesMap({ places, winnerId, center }: PlacesMapProps) 
           alt: `${i + 1}. ${place.name}`,
           keyboard: true,
         })
-          .bindPopup(buildPopup(place))
+          .bindPopup(buildPopup(place, unknownHours))
           .addTo(map);
         markers.set(place.id, marker);
         signatures.set(place.id, signature);
@@ -161,6 +178,7 @@ export default function PlacesMap({ places, winnerId, center }: PlacesMapProps) 
         marker.options.title = `${i + 1}. ${place.name}`;
         marker.options.alt = `${i + 1}. ${place.name}`;
         marker.setIcon(makeIcon(L, i, isWinner));
+        marker.setPopupContent(buildPopup(place, unknownHours));
         signatures.set(place.id, signature);
       }
       marker.setZIndexOffset(isWinner ? 1000 : 0);
@@ -185,7 +203,7 @@ export default function PlacesMap({ places, winnerId, center }: PlacesMapProps) 
     refitRef.current = applyView;
     userMovedRef.current = false;
     applyView(animate);
-  }, [ready, places, winnerId, center]);
+  }, [ready, places, winnerId, center, hoursUnknown]);
 
   return (
     <div

@@ -83,6 +83,13 @@ body {
   color: #1e1b4b;
 }
 
+.maps-popup-note {
+  display: block;
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
 .leaflet-container a.maps-link {
   color: #4338ca;
   font-weight: 600;

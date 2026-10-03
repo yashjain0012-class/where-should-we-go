@@ -31,7 +31,8 @@ export const MAX_HASH_CHARS = 1900;
 const MAX_NAME = 80;
 const MAX_LABEL = 120;
 const SHARE_LABEL = 60;
-const MAX_DISTANCE_M = 1500;
+// The search radius goes up to 5 km (see lib/categories.ts), plus the ~110 m centre snap.
+const MAX_DISTANCE_M = 5500;
 
 // Control characters, line separators and bidi overrides (used to spoof text).
 const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;

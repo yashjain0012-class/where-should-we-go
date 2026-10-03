@@ -2,12 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
+import FiltersPanel from "@/components/FiltersPanel";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
-import { CATEGORIES, getCategory } from "@/lib/categories";
+import {
+  CATEGORIES,
+  DEFAULT_RADIUS,
+  MAX_PLACES,
+  MAX_RADIUS,
+  formatRadius,
+  getCategory,
+  snapRadius,
+} from "@/lib/categories";
+import { openStates } from "@/lib/hours";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { pickIndex, targetRotation } from "@/lib/spin";
-import type { CategoryId, GeocodeResult, Place } from "@/lib/types";
+import type { CategoryId, GeocodeResult, OpenState, Place, PlacesResponse } from "@/lib/types";
 
 // Leaflet only runs in the browser, so the map is never rendered on the server.
 const PlacesMap = dynamic(() => import("@/components/PlacesMap"), {
@@ -36,23 +46,56 @@ function areaName(label: string): string {
   return label.split(",").slice(0, 2).join(",").trim() || "this area";
 }
 
+/** An error from our own API, with the server's suggestion for a smaller radius if it sent one. */
+class ApiError extends Error {
+  retryRadius?: number;
+  constructor(message: string, retryRadius?: number) {
+    super(message);
+    this.retryRadius = retryRadius;
+  }
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(50000) });
   } catch {
-    throw new Error("That took too long or the connection dropped. Please try again.");
+    throw new ApiError("That took too long or the connection dropped. Please try again.");
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error ?? "Something went wrong. Please try again.");
+  if (!res.ok) {
+    throw new ApiError(
+      data?.error ?? "Something went wrong. Please try again.",
+      typeof data?.retryRadius === "number" ? data.retryRadius : undefined,
+    );
+  }
   return data as T;
 }
+
+/** The wheel: drop places known to be closed (when "Open now" is on), then the closest 8. */
+function pickWheel(candidates: Place[], openNow: boolean, states: Record<string, OpenState>): Place[] {
+  const pool = openNow ? candidates.filter((p) => states[p.id] !== "closed") : candidates;
+  return pool.slice(0, MAX_PLACES);
+}
+
+const NO_IDS: ReadonlySet<string> = new Set();
 
 export default function Home() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryId>("restaurants");
   const [coords, setCoords] = useState<Coords | null>(null);
-  const [fetched, setFetched] = useState<Place[]>([]);
+  // Filters: the search radius, "Open now", and the pool of nearest places the API returned.
+  // The wheel shows the first 8 of the pool that pass the filters; `options` is that list
+  // minus anything the user removed.
+  const [radius, setRadius] = useState(DEFAULT_RADIUS);
+  const [shownRadius, setShownRadius] = useState(DEFAULT_RADIUS);
+  const [openNow, setOpenNow] = useState(false);
+  const [candidates, setCandidates] = useState<Place[]>([]);
+  const [tz, setTz] = useState<string | null>(null);
+  const [openStateById, setOpenStateById] = useState<Record<string, OpenState>>({});
+  const [notice, setNotice] = useState<{ text: string; radius: number; retryRadius?: number } | null>(
+    null,
+  );
   const [options, setOptions] = useState<Place[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,12 +121,24 @@ export default function Home() {
   const requestId = useRef(0);
   const spinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const radiusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fallbackInput = useRef<HTMLInputElement>(null);
+  // Mirrors for async callbacks that must not see stale state.
+  const openNowRef = useRef(false);
+  const goodRadius = useRef(DEFAULT_RADIUS); // radius of the results currently on screen
+  const hadResults = useRef(false);
+
+  // What the wheel would show with no manual removals ("Reset options" restores this).
+  const fetched = useMemo(
+    () => pickWheel(candidates, openNow, openStateById),
+    [candidates, openNow, openStateById],
+  );
 
   useEffect(
     () => () => {
       if (spinTimer.current) clearTimeout(spinTimer.current);
       if (noteTimer.current) clearTimeout(noteTimer.current);
+      if (radiusTimer.current) clearTimeout(radiusTimer.current);
     },
     [],
   );
@@ -105,7 +160,14 @@ export default function Home() {
       setLinkProblem(false);
       setCoords({ ...shared.center, label: shared.label });
       setCategory(shared.category);
-      setFetched(shared.places);
+      // A shared wheel carries only names and positions: no opening hours, so "Open now" resets.
+      openNowRef.current = false;
+      hadResults.current = true;
+      setOpenNow(false);
+      setOpenStateById({});
+      setTz(null);
+      setNotice(null);
+      setCandidates(shared.places);
       setOptions(shared.places);
       setSearched(true);
       setQuery(areaName(shared.label).slice(0, 120));
@@ -128,36 +190,68 @@ export default function Home() {
     if (shareFallbackUrl) fallbackInput.current?.select();
   }, [shareFallbackUrl]);
 
-  const loadPlaces = useCallback(async (where: Coords, cat: CategoryId) => {
-    clearShareHash();
-    setSharedMode(false);
-    setEditing(false);
-    setShareNote(null);
-    setShareFallbackUrl(null);
-    const id = ++requestId.current;
-    setLoading("Finding places within 1 km… busy free servers can take up to 30 seconds.");
-    setError(null);
-    setCanRetry(false);
-    setWinner(null);
-    try {
-      const data = await fetchJson<{ places: Place[] }>(
-        `/api/places?lat=${where.lat}&lon=${where.lon}&category=${cat}`,
-      );
-      if (id !== requestId.current) return;
-      setFetched(data.places);
-      setOptions(data.places);
-      setSearched(true);
-    } catch (e) {
-      if (id !== requestId.current) return;
-      setFetched([]);
-      setOptions([]);
-      setSearched(false);
-      setError(e instanceof Error ? e.message : "Something went wrong.");
-      setCanRetry(true);
-    } finally {
-      if (id === requestId.current) setLoading(null);
-    }
-  }, []);
+  /**
+   * Search around a point. With `keepOnError` (used when only the radius changed), a
+   * failure leaves the previous wheel in place and puts the slider back, instead of
+   * wiping the screen.
+   */
+  const loadPlaces = useCallback(
+    async (where: Coords, cat: CategoryId, rad: number, keepOnError = false) => {
+      if (radiusTimer.current) clearTimeout(radiusTimer.current); // this search supersedes any pending one
+      clearShareHash();
+      setSharedMode(false);
+      setEditing(false);
+      setShareNote(null);
+      setShareFallbackUrl(null);
+      const id = ++requestId.current;
+      setLoading(`Finding places within ${formatRadius(rad)}… busy free servers can take up to 30 seconds.`);
+      setError(null);
+      setCanRetry(false);
+      setNotice(null);
+      setWinner(null);
+      try {
+        const data = await fetchJson<PlacesResponse>(
+          `/api/places?lat=${where.lat}&lon=${where.lon}&category=${cat}&radius=${rad}`,
+        );
+        if (id !== requestId.current) return;
+        let states: Record<string, OpenState> = {};
+        if (openNowRef.current) {
+          setLoading("Checking opening hours…");
+          states = await openStates(data.places, data.tz);
+          if (id !== requestId.current) return;
+        }
+        setCandidates(data.places);
+        setTz(data.tz);
+        setOpenStateById(states);
+        setOptions(pickWheel(data.places, openNowRef.current, states));
+        setSearched(true);
+        setShownRadius(rad);
+        goodRadius.current = rad;
+        hadResults.current = true;
+      } catch (e) {
+        if (id !== requestId.current) return;
+        const message = e instanceof Error ? e.message : "Something went wrong.";
+        if (keepOnError && hadResults.current) {
+          setRadius(goodRadius.current);
+          setNotice({
+            text: message,
+            radius: rad,
+            retryRadius: e instanceof ApiError ? e.retryRadius : undefined,
+          });
+        } else {
+          setCandidates([]);
+          setOptions([]);
+          setSearched(false);
+          hadResults.current = false;
+          setError(message);
+          setCanRetry(true);
+        }
+      } finally {
+        if (id === requestId.current) setLoading(null);
+      }
+    },
+    [],
+  );
 
   async function handleSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -177,7 +271,7 @@ export default function Home() {
       if (id !== requestId.current) return;
       const where = { lat: geo.lat, lon: geo.lon, label: geo.label };
       setCoords(where);
-      await loadPlaces(where, category);
+      await loadPlaces(where, category, radius);
     } catch (err) {
       if (id !== requestId.current) return;
       setLoading(null);
@@ -203,7 +297,7 @@ export default function Home() {
         };
         setQuery("My location");
         setCoords(where);
-        void loadPlaces(where, category);
+        void loadPlaces(where, category, radius);
       },
       (err) => {
         setLoading(null);
@@ -220,7 +314,43 @@ export default function Home() {
   function handleCategory(next: CategoryId) {
     if (spinning || next === category) return;
     setCategory(next);
-    if (coords) void loadPlaces(coords, next);
+    if (coords) void loadPlaces(coords, next, radius);
+  }
+
+  // Moving the slider updates the label at once and searches once it settles.
+  function handleRadiusChange(value: number) {
+    setRadius(value);
+    setNotice(null);
+    if (radiusTimer.current) clearTimeout(radiusTimer.current);
+    if (!coords) return;
+    radiusTimer.current = setTimeout(() => void loadPlaces(coords, category, value, true), 600);
+  }
+
+  // Search straight away with a specific radius (the "Widen" and "Try smaller" buttons).
+  function commitRadius(value: number) {
+    if (spinning) return;
+    setRadius(value);
+    if (coords) void loadPlaces(coords, category, value, true);
+  }
+
+  // "Open now" works on the pool we already have, so toggling never needs a new search.
+  async function handleOpenNow(next: boolean) {
+    if (spinning) return;
+    setOpenNow(next);
+    openNowRef.current = next;
+    setWinner(null);
+    if (loading) return; // a search is in flight and will apply the toggle when it lands
+    if (!next) {
+      setOptions(pickWheel(candidates, false, {}));
+      return;
+    }
+    const id = ++requestId.current;
+    setLoading("Checking opening hours…");
+    const states = await openStates(candidates, tz);
+    if (id !== requestId.current) return;
+    setOpenStateById(states);
+    setOptions(pickWheel(candidates, true, states));
+    setLoading(null);
   }
 
   function removeOption(id: string) {
@@ -308,6 +438,25 @@ export default function Home() {
   );
   const canSpin = options.length >= 2 && !spinning && !loading;
   const removedSome = fetched.length > options.length;
+
+  // Filter feedback: too few places left after the radius and "Open now" are applied.
+  const widerRadius = snapRadius(Math.min(MAX_RADIUS, shownRadius * 2));
+  const fewMessage =
+    candidates.length === 0
+      ? `Nothing found within ${formatRadius(shownRadius)}. A wider radius or another category might help.`
+      : `${
+          fetched.length === 0 ? "No places match" : "Only 1 place matches"
+        } these filters within ${formatRadius(shownRadius)}. Try a wider radius${
+          openNow ? " or show closed places too" : ""
+        }.`;
+  // With "Open now" on, anything not confirmed open has no usable hours.
+  const unknownIds = useMemo<ReadonlySet<string>>(
+    () =>
+      openNow
+        ? new Set(options.filter((p) => openStateById[p.id] !== "open").map((p) => p.id))
+        : NO_IDS,
+    [openNow, options, openStateById],
+  );
 
   return (
     <main
@@ -437,7 +586,7 @@ export default function Home() {
             {canRetry && coords && (
               <button
                 type="button"
-                onClick={() => void loadPlaces(coords, category)}
+                onClick={() => void loadPlaces(coords, category, radius)}
                 className="rounded-lg bg-red-100 px-3 py-1 font-semibold text-red-800 hover:bg-red-200"
               >
                 Try again
@@ -453,8 +602,58 @@ export default function Home() {
       </form>
       )}
 
+      {(!sharedMode || editing) && (
+        <FiltersPanel
+          radius={radius}
+          onRadiusChange={handleRadiusChange}
+          openNow={openNow}
+          onOpenNowChange={(next) => void handleOpenNow(next)}
+          disabled={spinning}
+        >
+          {notice && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 rounded-xl bg-amber-100 p-3 text-sm text-amber-950"
+            >
+              <p>
+                {notice.text} Your previous {formatRadius(shownRadius)} results are still on the wheel.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {notice.retryRadius && (
+                  <button
+                    type="button"
+                    onClick={() => commitRadius(notice.retryRadius!)}
+                    className="min-h-11 rounded-xl bg-amber-800 px-4 font-semibold text-white hover:bg-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
+                  >
+                    Try {formatRadius(notice.retryRadius)}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => commitRadius(notice.radius)}
+                  className="min-h-11 rounded-xl border-2 border-amber-800 bg-white px-4 font-semibold text-amber-900 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
+          )}
+        </FiltersPanel>
+      )}
+
       <section className="flex flex-col items-center gap-6 rounded-3xl bg-white/80 p-4 pt-8 shadow-lg backdrop-blur sm:p-6 sm:pt-10">
-        <Wheel places={options} rotation={rotation} spinning={spinning} durationMs={duration} />
+        <div className="relative w-full" aria-busy={!!loading}>
+          <div className={`transition-opacity ${loading && searched ? "opacity-50" : ""}`}>
+            <Wheel places={options} rotation={rotation} spinning={spinning} durationMs={duration} />
+          </div>
+          {loading && searched && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <span className="rounded-full bg-indigo-950 px-4 py-2 text-sm font-semibold text-white shadow-lg">
+                Updating…
+              </span>
+            </div>
+          )}
+        </div>
 
         <button
           type="button"
@@ -515,12 +714,37 @@ export default function Home() {
             Search a place above to fill the wheel with nearby {cat?.label.toLowerCase()}.
           </p>
         )}
-        {searched && !loading && fetched.length === 0 && (
-          <p className="text-center text-sm text-indigo-900">
-            Nothing found within 1 km. Try another category or a busier area.
-          </p>
+        {searched && !loading && !sharedMode && fetched.length < 2 && (
+          <div
+            role="status"
+            className="flex max-w-md flex-col items-center gap-3 text-center text-sm text-indigo-900"
+          >
+            <p>{fewMessage}</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {shownRadius < MAX_RADIUS && (
+                <button
+                  type="button"
+                  onClick={() => commitRadius(widerRadius)}
+                  disabled={spinning}
+                  className="min-h-11 rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+                >
+                  Widen to {formatRadius(widerRadius)}
+                </button>
+              )}
+              {openNow && (
+                <button
+                  type="button"
+                  onClick={() => void handleOpenNow(false)}
+                  disabled={spinning}
+                  className="min-h-11 rounded-xl border-2 border-indigo-600 bg-white px-4 font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+                >
+                  Show closed places too
+                </button>
+              )}
+            </div>
+          </div>
         )}
-        {options.length === 1 && !loading && (
+        {options.length === 1 && !loading && (fetched.length >= 2 || sharedMode) && (
           <p className="text-center text-sm text-indigo-900">
             Only one option left. Reset the options to spin again.
           </p>
@@ -533,6 +757,11 @@ export default function Home() {
                 {cat?.emoji} Let&apos;s go to
               </p>
               <p className="mt-1 text-2xl font-extrabold">{winner.name}</p>
+              {openNow && (
+                <p className="mt-1 text-sm text-indigo-200">
+                  {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : "Open now"}
+                </p>
+              )}
               <a
                 href={mapsUrl(winner)}
                 target="_blank"
@@ -579,6 +808,16 @@ export default function Home() {
                     {i + 1}
                   </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
+                  {openNow &&
+                    (unknownIds.has(p.id) ? (
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                        hours unknown
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
+                        open
+                      </span>
+                    ))}
                   <button
                     type="button"
                     onClick={() => removeOption(p.id)}
@@ -608,7 +847,12 @@ export default function Home() {
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-indigo-900">
               Map
             </h2>
-            <PlacesMap places={options} winnerId={winner?.id ?? null} center={mapCenter} />
+            <PlacesMap
+              places={options}
+              winnerId={winner?.id ?? null}
+              center={mapCenter}
+              hoursUnknown={unknownIds}
+            />
             <p className="mt-2 text-xs text-indigo-900/70">
               Tap a pin for its name and a Google Maps link. Pin colours and numbers match the wheel.
             </p>

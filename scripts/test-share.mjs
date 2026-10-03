@@ -93,6 +93,20 @@ test("a precise GPS centre is never exposed in the link", () => {
   assert.ok(Math.abs(decoded.places[0].lat - places[0].lat) <= 1e-5, "places keep full precision");
 });
 
+console.log("wide searches (5 km)");
+test("a 5 km wheel round-trips and is not mistaken for a broken link", () => {
+  const far = Array.from({ length: 8 }, (_, i) => ({
+    id: "f" + i,
+    name: "Far place " + i,
+    lat: CENTRE.lat + (i % 2 ? 1 : -1) * (0.035 + i * 0.001), // roughly 3.9 to 4.6 km away
+    lon: CENTRE.lon + (i % 3 - 1) * 0.02,
+  }));
+  const decoded = decodeShare(encodeShare(state(far, "things")));
+  assert.ok(decoded, "decoded");
+  assert.equal(decoded.places.length, 8);
+  decoded.places.forEach((p, i) => assert.ok(Math.abs(p.lat - far[i].lat) <= 1e-5 && Math.abs(p.lon - far[i].lon) <= 1e-5));
+});
+
 console.log("length budget");
 const typical = encodeShare(state(makePlaces(8, (i) => ["Hoxton Grill", "Bone Daddies", "Delamina East", "Kennedy's", "Burger & Beyond", "Indi Go @ RichMix", "Hopper's", "Maki"][i])));
 console.log(`       typical 8 places: ${typical.length} characters`);
@@ -102,6 +116,11 @@ const worstCases = {
   "8 x 80-char ASCII names": makePlaces(8, (i) => `${i}`.padEnd(80, "y")),
   "8 x 60-char CJK names": makePlaces(8, () => "寿".repeat(60)),
   "8 x 80-char emoji names": makePlaces(8, () => "🍣".repeat(40)),
+  "8 x 60-char CJK names, 5 km spread": makePlaces(8, () => "寿".repeat(60)).map((p, i) => ({
+    ...p,
+    lat: CENTRE.lat + (i % 2 ? 1 : -1) * 0.035, // up to ~4.7 km from the centre
+    lon: CENTRE.lon + (i % 3 - 1) * 0.025,
+  })),
 };
 for (const [name, places] of Object.entries(worstCases)) {
   const link = encodeShare(state(places, "things", "寿".repeat(200)));
@@ -140,7 +159,7 @@ const cases = {
   "string coordinate": craft([clat, clon, 0, "x", [["A", "1", 2]]]),
   "centre latitude out of range": craft([95 * 1e5, clon, 0, "x", [["A", 0, 0]]]),
   "centre longitude out of range": craft([clat, 181 * 1e5, 0, "x", [["A", 0, 0]]]),
-  "place 2 km away": craft([clat, clon, 0, "x", [["A", 2000 * 0.9, 0]]]),
+  "place 6 km away": craft([clat, clon, 0, "x", [["A", Math.round(6000 / 1.1132), 0]]]),
   "81-char name": craft([clat, clon, 0, "x", [["n".repeat(81), 0, 0]]]),
   "name is a number": craft([clat, clon, 0, "x", [[42, 0, 0]]]),
   "empty name": craft([clat, clon, 0, "x", [["   ", 0, 0]]]),
