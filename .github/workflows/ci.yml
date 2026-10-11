@@ -23,6 +23,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Generate Next.js route types (a clean checkout has none; layouts and pages use them)
+        run: npx next typegen
+
       - name: Typecheck
         run: npx tsc --noEmit
 
