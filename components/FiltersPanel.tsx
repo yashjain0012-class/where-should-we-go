@@ -3,6 +3,7 @@ import { MAX_RADIUS, MIN_RADIUS, RADIUS_STEP, formatRadius } from "@/lib/categor
 import { NO_FILTERS, activeFilterCount, prettyCuisine, type AttrFilters, type Diet } from "@/lib/filters";
 import { OPEN_AT_PRESETS, sameOpenAt, type OpenAt } from "@/lib/openAt";
 import { formatWalk } from "@/lib/walk";
+import type { WeatherNow } from "@/lib/weather";
 
 interface FiltersPanelProps {
   radius: number;
@@ -19,6 +20,10 @@ interface FiltersPanelProps {
   cuisineChips: { name: string; count: number }[];
   /** Diet and cuisine only make sense for food and drink. */
   foodCategory: boolean;
+  /** Today's weather where you searched (null when unavailable). */
+  weather: WeatherNow | null;
+  preferIndoor: boolean;
+  onPreferIndoorChange: (next: boolean) => void;
   /** Disable the controls while the wheel is spinning. */
   disabled: boolean;
   /** Messages or actions that belong to the filters (for example a timeout notice). */
@@ -62,6 +67,9 @@ export default function FiltersPanel({
   onFiltersChange,
   cuisineChips,
   foodCategory,
+  weather,
+  preferIndoor,
+  onPreferIndoorChange,
   disabled,
   children,
 }: FiltersPanelProps) {
@@ -81,6 +89,28 @@ export default function FiltersPanel({
       aria-label="Filters"
       className="flex flex-col gap-3 rounded-3xl bg-white/80 p-4 shadow-lg backdrop-blur sm:p-6"
     >
+      {weather && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-2">
+          <p className="text-sm font-semibold text-sky-950">
+            <span aria-hidden>{weather.emoji}</span> {weather.tempC}°C, {weather.label.toLowerCase()}
+          </p>
+          {weather.wet && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preferIndoor}
+              disabled={disabled}
+              onClick={() => onPreferIndoorChange(!preferIndoor)}
+              className={`min-h-11 rounded-full px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:opacity-60 ${
+                preferIndoor ? "bg-sky-800 text-white shadow" : "bg-white text-sky-900 ring-1 ring-sky-200 hover:bg-sky-100"
+              }`}
+            >
+              Indoor places first
+            </button>
+          )}
+        </div>
+      )}
+
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <label htmlFor="radius" className="text-sm font-bold uppercase tracking-wider text-indigo-900">

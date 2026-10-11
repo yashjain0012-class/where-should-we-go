@@ -32,7 +32,7 @@ export function placesFor(category: string) {
     lat: CENTRE.lat + (i - 6) * 0.0006,
     lon: CENTRE.lon + (((i * 7) % 5) - 2) * 0.0007,
     distance: 40 + i * 80,
-    ...(ATTRS[i] ? { attrs: ATTRS[i] } : {}),
+    ...(category === "things" ? { attrs: { kind: THINGS_KINDS[i] } } : ATTRS[i] ? { attrs: ATTRS[i] } : {}),
     ...(i === 0 ? { hours: "24/7" } : i === 1 ? { hours: "off" } : i === 2 ? { hours: "Mo-Su 09:00-17:00" } : {}),
   }));
 }
@@ -43,6 +43,12 @@ const PNG_1PX = Buffer.from(
   "base64",
 );
 
+const CLEAR_DAY = { tempC: 18, code: 0, label: "Clear", emoji: "☀️", raining: false, rainSoon: false, wet: false };
+export const RAINY_DAY = { tempC: 9, code: 61, label: "Rain", emoji: "🌧️", raining: true, rainSoon: false, wet: true };
+
+/** What kind of place each of the "things to do" results is (parks and gardens are outdoors). */
+const THINGS_KINDS = ["museum", "attraction", "garden", "gallery", "attraction", "park", "theatre", "attraction", "gallery", "park", "arts_centre", "park"];
+
 export interface Api {
   geocode: URL[];
   places: URL[];
@@ -50,10 +56,12 @@ export interface Api {
   failRadius: number | null;
   /** Return at most this many places (to test the "too few results" message). */
   limit: number | null;
+  /** What /api/weather answers; null makes it fail, like an outage. */
+  weather: Record<string, unknown> | null;
 }
 
 export async function mockApis(page: Page): Promise<Api> {
-  const api: Api = { geocode: [], places: [], failRadius: null, limit: null };
+  const api: Api = { geocode: [], places: [], failRadius: null, limit: null, weather: CLEAR_DAY };
   await page.route("**/api/geocode**", (route) => {
     api.geocode.push(new URL(route.request().url()));
     const q = new URL(route.request().url()).searchParams.get("q") ?? "";
@@ -79,6 +87,9 @@ export async function mockApis(page: Page): Promise<Api> {
       json: { places: placesFor(category).filter((p) => p.distance <= radius).slice(0, api.limit ?? 99), tz: "Europe/London" },
     });
   });
+  await page.route("**/api/weather**", (route) =>
+    api.weather ? route.fulfill({ json: api.weather }) : route.fulfill({ status: 502, json: { error: "The weather service didn't respond." } }),
+  );
   await page.route("**/tile.openstreetmap.org/**", (route) => route.fulfill({ contentType: "image/png", body: PNG_1PX }));
   return api;
 }

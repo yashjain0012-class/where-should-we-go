@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
-  expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, spinAndWait, spinButton, test,
+  RAINY_DAY, expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, spinAndWait, spinButton, test,
 } from "./fixtures";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
@@ -194,6 +194,40 @@ test.describe("filters", () => {
     api.limit = null;
     await page.getByRole("button", { name: /^Widen to/ }).click();
     await expect.poll(() => api.places.at(-1)!.searchParams.get("radius")).toBe("1500");
+    await expect(removeButtons(page)).toHaveCount(8);
+  });
+});
+
+test.describe("weather", () => {
+  test("a dry day shows the weather without the indoor switch", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await expect(page.getByText("18°C, clear")).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Indoor places first" })).toHaveCount(0);
+  });
+
+  test("when it rains, outdoor places go after indoor ones, and the switch turns that off", async ({ page, api }) => {
+    api.weather = RAINY_DAY;
+    await openApp(page);
+    await search(page);
+    await expect(page.getByText("9°C, rain")).toBeVisible();
+    const indoorFirst = page.getByRole("switch", { name: "Indoor places first" });
+    await expect(indoorFirst).toHaveAttribute("aria-checked", "true"); // on by default when it is wet
+    await page.getByRole("button", { name: /Things to do/ }).click();
+    await expect(listed(page, "Geffrye Museum")).toHaveCount(1);
+    for (const outdoor of ["Sky Garden", "Shoreditch Park", "Victoria Park"]) await expect(listed(page, outdoor)).toHaveCount(0);
+
+    await indoorFirst.click(); // back to nearest first
+    await expect(indoorFirst).toHaveAttribute("aria-checked", "false");
+    await expect(listed(page, "Sky Garden")).toHaveCount(1);
+    await expect(listed(page, "Shoreditch Park")).toHaveCount(1);
+  });
+
+  test("if the weather service is down, nothing is shown and the search still works", async ({ page, api }) => {
+    api.weather = null;
+    await openApp(page);
+    await search(page);
+    await expect(page.getByText(/°C/)).toHaveCount(0);
     await expect(removeButtons(page)).toHaveCount(8);
   });
 });

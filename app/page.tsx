@@ -25,6 +25,7 @@ import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio }
 import { pickIndex, targetRotation } from "@/lib/spin";
 import { tickTimes } from "@/lib/ticks";
 import { formatWalk, walkMinutes } from "@/lib/walk";
+import type { WeatherNow } from "@/lib/weather";
 import type { CategoryId, GeocodeResult, OpenState, Place, PlacesResponse } from "@/lib/types";
 
 // Leaflet only runs in the browser, so the map is never rendered on the server.
@@ -105,6 +106,8 @@ export default function Home() {
   const [openNow, setOpenNow] = useState(false);
   const [openAt, setOpenAt] = useState<OpenAt | null>(null); // null = check hours for right now
   const [filters, setFilters] = useState<AttrFilters>(NO_FILTERS); // cuisine, diet, accessibility
+  const [weather, setWeather] = useState<WeatherNow | null>(null);
+  const [preferIndoor, setPreferIndoor] = useState(false); // on by default when it is raining or about to
   const [candidates, setCandidates] = useState<Place[]>([]);
   const [tz, setTz] = useState<string | null>(null);
   const [openStateById, setOpenStateById] = useState<Record<string, OpenState>>({});
@@ -148,13 +151,14 @@ export default function Home() {
   const openNowRef = useRef(false);
   const openAtRef = useRef<OpenAt | null>(null);
   const filtersRef = useRef<AttrFilters>(NO_FILTERS);
+  const preferIndoorRef = useRef(false);
   const goodRadius = useRef(DEFAULT_RADIUS); // radius of the results currently on screen
   const hadResults = useRef(false);
 
   // What the wheel would show with no manual removals ("Reset options" restores this).
   const fetched = useMemo(
-    () => pickWheel(candidates, openNow, openStateById, filters),
-    [candidates, openNow, openStateById, filters],
+    () => pickWheel(candidates, openNow, openStateById, filters, preferIndoor),
+    [candidates, openNow, openStateById, filters, preferIndoor],
   );
   const cuisineChips = useMemo(() => cuisineOptions(candidates), [candidates]);
 
@@ -194,6 +198,9 @@ export default function Home() {
       setOpenAt(null);
       filtersRef.current = NO_FILTERS;
       setFilters(NO_FILTERS);
+      preferIndoorRef.current = false;
+      setPreferIndoor(false);
+      setWeather(null);
       hadResults.current = true;
       setOpenNow(false);
       setOpenStateById({});
@@ -246,11 +253,16 @@ export default function Home() {
       setCanRetry(false);
       setNotice(null);
       setWinner(null);
+      // The weather is a nice-to-have: ask in parallel, and never let it hold up or break the search.
+      const weatherPromise = fetchJson<WeatherNow>(`/api/weather?lat=${where.lat}&lon=${where.lon}`).catch(() => null);
       try {
         const data = await fetchJson<PlacesResponse>(
           `/api/places?lat=${where.lat}&lon=${where.lon}&category=${cat}&radius=${rad}`,
         );
         if (id !== requestId.current) return;
+        const forecast = await Promise.race([weatherPromise, new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500))]);
+        if (id !== requestId.current) return;
+        const indoor = forecast?.wet ?? false;
         let states: Record<string, OpenState> = {};
         if (openNowRef.current) {
           setLoading("Checking opening hours…");
@@ -260,7 +272,10 @@ export default function Home() {
         setCandidates(data.places);
         setTz(data.tz);
         setOpenStateById(states);
-        setOptions(pickWheel(data.places, openNowRef.current, states, filtersRef.current));
+        setWeather(forecast);
+        setPreferIndoor(indoor);
+        preferIndoorRef.current = indoor;
+        setOptions(pickWheel(data.places, openNowRef.current, states, filtersRef.current, indoor));
         setSearched(true);
         setShownRadius(rad);
         goodRadius.current = rad;
@@ -383,7 +398,7 @@ export default function Home() {
     setWinner(null);
     if (loading) return; // a search is in flight and will apply the toggle when it lands
     if (!next) {
-      setOptions(pickWheel(candidates, false, {}, filtersRef.current));
+      setOptions(pickWheel(candidates, false, {}, filtersRef.current, preferIndoorRef.current));
       return;
     }
     const id = ++requestId.current;
@@ -391,7 +406,7 @@ export default function Home() {
     const states = await openStates(candidates, tz, new Date(), openAtRef.current);
     if (id !== requestId.current) return;
     setOpenStateById(states);
-    setOptions(pickWheel(candidates, true, states, filtersRef.current));
+    setOptions(pickWheel(candidates, true, states, filtersRef.current, preferIndoorRef.current));
     setLoading(null);
   }
 
@@ -445,13 +460,22 @@ export default function Home() {
     }, 50);
   }
 
+  // "Indoor places first" (offered when it is wet) reorders the pool we already have, so it needs no new search.
+  function handlePreferIndoor(next: boolean) {
+    if (spinning) return;
+    setPreferIndoor(next);
+    preferIndoorRef.current = next;
+    setWinner(null);
+    setOptions(pickWheel(candidates, openNowRef.current, openStateById, filtersRef.current, next));
+  }
+
   // Cuisine / diet / accessibility filters work on the pool we already have, so changing them never needs a new search.
   function handleFilters(next: AttrFilters) {
     if (spinning) return;
     setFilters(next);
     filtersRef.current = next;
     setWinner(null);
-    setOptions(pickWheel(candidates, openNowRef.current, openStateById, next));
+    setOptions(pickWheel(candidates, openNowRef.current, openStateById, next, preferIndoorRef.current));
   }
 
   // Change when "open" is checked (a time on the place's own clock); uses the pool we already have.
@@ -466,7 +490,7 @@ export default function Home() {
     const states = await openStates(candidates, tz, new Date(), next);
     if (id !== requestId.current) return;
     setOpenStateById(states);
-    setOptions(pickWheel(candidates, true, states, filtersRef.current));
+    setOptions(pickWheel(candidates, true, states, filtersRef.current, preferIndoorRef.current));
     setLoading(null);
   }
 
@@ -709,6 +733,9 @@ export default function Home() {
           onFiltersChange={handleFilters}
           cuisineChips={cuisineChips}
           foodCategory={category !== "things"}
+          weather={weather}
+          preferIndoor={preferIndoor}
+          onPreferIndoorChange={handlePreferIndoor}
           disabled={spinning}
         >
           {notice && (
@@ -1016,7 +1043,7 @@ export default function Home() {
       </section>
 
       <footer className="pb-4 text-center text-xs text-indigo-900/70">
-        Place data © OpenStreetMap contributors · Geocoding by Nominatim · Search by Overpass
+        Place data © OpenStreetMap contributors · Geocoding by Nominatim · Search by Overpass · Weather by Open-Meteo.com
       </footer>
     </main>
   );
