@@ -463,6 +463,88 @@ test.describe("my own list", () => {
   });
 });
 
+test.describe("group decisions", () => {
+  type P = import("@playwright/test").Page;
+  const custom = async (page: P, text: string, count: number) => {
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await page.getByLabel("Your options").fill(text);
+    await page.getByRole("button", { name: /^Put on the wheel/ }).click();
+    await expect(removeButtons(page)).toHaveCount(count);
+  };
+
+  test("pass-the-phone vetoes: each person removes one, then you spin what is left", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const names = await optionNames(page);
+    await page.getByRole("button", { name: /Take turns vetoing/ }).click();
+    await expect(spinButton(page)).toBeDisabled();
+    await page.getByRole("button", { name: "Start" }).click();
+    await expect(page.getByText("Person 1 of 3")).toBeVisible();
+    await page.getByRole("button", { name: `Veto ${names[0]}` }).click();
+    await expect(page.getByText("Person 2 of 3")).toBeVisible();
+    await page.getByRole("button", { name: `Veto ${names[1]}` }).click();
+    await expect(page.getByText("Person 3 of 3")).toBeVisible();
+    await page.getByRole("button", { name: `Veto ${names[2]}` }).click();
+    await expect(page.getByText(/Everyone has had a say: 5 options left/)).toBeVisible();
+    await expect(removeButtons(page)).toHaveCount(5);
+    expect(await optionNames(page)).toEqual(names.slice(3));
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(spinButton(page)).toBeEnabled();
+    const winner = await spinAndWait(page);
+    expect(names.slice(3)).toContain(winner);
+    expect(await optionUnderPointer(page)).toBe(winner);
+  });
+
+  test("a person can pass, and the vetoes stop at two options", async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await page.getByLabel("Your options").fill("A\nB\nC\nD");
+    await page.getByRole("button", { name: /^Put on the wheel/ }).click();
+    await page.getByRole("button", { name: /Take turns vetoing/ }).click();
+    await page.getByLabel("How many people?").selectOption("6");
+    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Pass" }).click();
+    await expect(page.getByText("Person 2 of 6")).toBeVisible();
+    await page.getByRole("button", { name: "Veto A" }).click();
+    await page.getByRole("button", { name: "Veto B" }).click();
+    await expect(page.getByText(/Down to two: 2 options left/)).toBeVisible(); // nobody can veto below two
+    await expect(removeButtons(page)).toHaveCount(2);
+  });
+
+  test("head-to-head: pick between pairs until one is left, and the wheel shows the same winner", async ({ page }) => {
+    await openApp(page);
+    await custom(page, "A\nB\nC\nD\nE", 5);
+    await page.getByRole("button", { name: /Head-to-head/ }).click();
+    await expect(spinButton(page)).toBeDisabled();
+    const duel = page.getByRole("region", { name: "Head-to-head" });
+    for (let votes = 4; votes >= 1; votes--) {
+      await expect(duel).toContainText(`${votes} ${votes === 1 ? "choice" : "choices"} to go`);
+      await duel.getByRole("button").first().click();
+    }
+    const card = page.locator(".result-pop");
+    await expect(card).toBeVisible();
+    const winner = (await card.locator("p.text-2xl").textContent())!;
+    expect(["A", "B", "C", "D", "E"]).toContain(winner);
+    expect(await optionUnderPointer(page)).toBe(winner);
+    await expect(duel).toHaveCount(0);
+    await expect(spinButton(page)).toBeEnabled();
+  });
+
+  test("head-to-head can be abandoned, and works on a places wheel too", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await page.getByRole("button", { name: /Head-to-head/ }).click();
+    const duel = page.getByRole("region", { name: "Head-to-head" });
+    await expect(duel).toContainText("Quarter-final");
+    await duel.getByRole("button", { name: "Back to the wheel" }).click();
+    await expect(duel).toHaveCount(0);
+    await expect(spinButton(page)).toBeEnabled();
+    await page.getByRole("button", { name: /Head-to-head/ }).click();
+    for (let i = 0; i < 7; i++) await duel.getByRole("button").first().click();
+    await expect(page.locator(".result-pop")).toContainText("Let's go to");
+  });
+});
+
 test.describe("sharing", () => {
   test("a copied link opens the same wheel in a fresh page without searching again", async ({ page, context }) => {
     await openApp(page);

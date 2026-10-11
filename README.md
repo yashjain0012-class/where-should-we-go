@@ -50,6 +50,13 @@ The **✏️ My own list** switch turns the wheel into a general decision spinne
 
 Custom lists share as `#c=1.<checksum>.<payload>`, where the payload is base64url JSON of `[[name, weight], ...]`. Opening one fills the editor and the wheel, with no API calls. Every link is checked for the checksum, length, weight range and name content, and a broken or tampered link falls back to the normal screen with a message.
 
+## Deciding together
+
+Two helpers sit under the Spin button (and work on any wheel, places or your own list):
+
+- **🙈 Take turns vetoing** (3 or more options): pass the phone around; each of 2 to 6 people removes the one option they want least, or passes. It never vetoes below two options, and Spin is disabled until it ends.
+- **🏆 Head-to-head instead** (2 or more options): a knockout tournament, two options at a time, you pick, until one is left. Any number of options works (2 to 16): extra slots are byes, so nobody votes more than they need to, and exactly *n − 1* choices decide it. The wheel then turns (without spinning) to show the same winner. The pure logic is in `lib/bracket.ts` with its own tests.
+
 ## The spin: sound and celebration
 
 - **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
@@ -97,6 +104,7 @@ npm run test:ticks     # easing curve vs CSS, tick schedule (count, slowing gaps
 npm run test:spin      # weighted picks (20,000 spins), landing under the pointer, ticks on uneven wheels
 npm run test:prefs     # remembered favourites, hidden places and history: validation, limits, clearing
 npm run test:custom    # custom lists: parsing, weights, limits, share links (valid, tampered, forged)
+npm run test:bracket   # head-to-head: byes, n-1 votes for any size, immutability, every option can win
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -126,6 +134,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/spin.ts`: picks the winner first (weighted), then computes the rotation that lands on it
 - `lib/prefs.ts`, `components/PrefsPanel.tsx`: favourites, hidden places and history, kept in this browser
 - `lib/share.ts`: share-link encode, decode and validation
+- `lib/bracket.ts`, `components/Duel.tsx`, `components/VetoRound.tsx`: head-to-head tournament and pass-the-phone vetoes
 - `lib/custom.ts`, `components/CustomEditor.tsx`: the "My own list" mode and its share links
 - `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti
 - `lib/overpass.ts`, `lib/geo.ts`: ring query builder and nearest-first candidate parsing

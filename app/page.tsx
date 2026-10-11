@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import CustomEditor from "@/components/CustomEditor";
+import Duel from "@/components/Duel";
 import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
 import ResultActions from "@/components/ResultActions";
+import VetoRound from "@/components/VetoRound";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
 import {
   CATEGORIES,
@@ -145,6 +147,8 @@ export default function Home() {
   const [customText, setCustomText] = useState("");
   const [customItems, setCustomItems] = useState<CustomItem[]>([]);
   const [customNotes, setCustomNotes] = useState<string[]>([]);
+  // Group helpers that replace the spin for a moment: pass-the-phone vetoes, or head-to-head choices.
+  const [helper, setHelper] = useState<"none" | "veto" | "duel">("none");
   const placesStash = useRef<Place[]>([]); // the places wheel, kept while the custom list is showing
   const [sharedMode, setSharedMode] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -220,6 +224,7 @@ export default function Home() {
         stopTicks();
         stopConfetti();
         setSpinning(false);
+        setHelper("none");
         setLinkProblem(false);
         setMode("custom");
         setCustomItems(items);
@@ -247,6 +252,7 @@ export default function Home() {
       stopTicks(); // a new wheel arrived mid-spin: cut the sound and any confetti
       stopConfetti();
       setSpinning(false);
+      setHelper("none");
       setLinkProblem(false);
       setMode("places");
       setCoords({ ...shared.center, label: shared.label });
@@ -302,6 +308,7 @@ export default function Home() {
     async (where: Coords, cat: CategoryId, rad: number, keepOnError = false) => {
       if (radiusTimer.current) clearTimeout(radiusTimer.current); // this search supersedes any pending one
       clearShareHash();
+      setHelper("none");
       setSharedMode(false);
       setEditing(false);
       setShareNote(null);
@@ -478,6 +485,7 @@ export default function Home() {
     setShareNote(null);
     setShareFallbackUrl(null);
     stopConfetti();
+    setHelper("none");
     if (next === "custom") {
       placesStash.current = options;
       setMode("custom");
@@ -653,7 +661,7 @@ export default function Home() {
     () => (coords ? { lat: coords.lat, lon: coords.lon } : null),
     [coords],
   );
-  const canSpin = options.length >= 2 && !spinning && !loading;
+  const canSpin = options.length >= 2 && !spinning && !loading && helper === "none";
   const removedSome = fetched.length > options.length;
 
   // Filter feedback: too few places left after the radius and "Open now" are applied.
@@ -944,6 +952,56 @@ export default function Home() {
             <span aria-hidden>{muted ? "🔇" : "🔊"}</span>
           </button>
         </div>
+
+        {options.length >= 2 && !spinning && helper === "none" && (
+          <div className="flex flex-wrap justify-center gap-2">
+            {options.length >= 3 && (
+              <button
+                type="button"
+                onClick={() => setHelper("veto")}
+                className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              >
+                🙈 Take turns vetoing
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setWinner(null);
+                setHelper("duel");
+              }}
+              className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+              🏆 Head-to-head instead
+            </button>
+          </div>
+        )}
+        {helper === "veto" && (
+          <VetoRound
+            options={options}
+            onRemove={(id) => {
+              removeOption(id);
+            }}
+            onClose={() => setHelper("none")}
+          />
+        )}
+        {helper === "duel" && (
+          <Duel
+            key={options.map((o) => o.id).join("|")}
+            options={options}
+            onCancel={() => setHelper("none")}
+            onChampion={(place) => {
+              setHelper("none");
+              // Turn the wheel (without spinning) so the pointer shows the same winner.
+              const to = targetRotation(rotationRef.current, options.findIndex((o) => o.id === place.id), weights, 0);
+              rotationRef.current = to;
+              setRotation(to);
+              setWinner(place);
+              if (!sharedMode && !customMode) recordWinner(place);
+              celebrate();
+            }}
+          />
+        )}
 
         {options.length > 0 && (
           <div className="flex w-full max-w-md flex-col items-stretch gap-2">
