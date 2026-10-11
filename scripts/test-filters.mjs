@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { ringsFor, buildQuery, boundingBox, parseCandidates, RING_CAP } from "../.test-build/overpass.js";
 import { snapRadius, formatRadius, CATEGORIES, POOL_SIZE } from "../.test-build/categories.js";
-import { openStateOf, placeLocalDate, openStates, loadOpeningHours } from "../.test-build/hours.js";
+import { openStateOf, placeLocalDate, openStates, loadOpeningHours, wallClockFor } from "../.test-build/hours.js";
+import { describeOpenAt, formatClock, sameOpenAt, OPEN_AT_PRESETS } from "../.test-build/openAt.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -218,6 +219,61 @@ await test("openStates maps every place and skips the parser when nothing has ho
     at("2026-10-07T12:00:00Z"),
   );
   assert.deepEqual(some, { a: "open", b: "closed", c: "unknown" });
+});
+
+console.log("open at a chosen time (the place's own clock)");
+const NOW = at("2026-10-07T12:00:00Z"); // Wednesday 13:00 in London, 21:00 in Tokyo
+const stamp = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+const stateAt = (hours, tz, openAt, pos = LONDON) => openStateOf(OH, { ...pos, hours }, tz, NOW, openAt);
+const TONIGHT7 = { dayOffset: 0, hour: 19, minute: 0 };
+
+test("wallClockFor: now, tonight, tomorrow, and a passed time rolling to tomorrow", () => {
+  assert.equal(stamp(wallClockFor(NOW, "Europe/London", null)), "2026-10-7 13:00");
+  assert.equal(stamp(wallClockFor(NOW, "Europe/London", TONIGHT7)), "2026-10-7 19:00");
+  assert.equal(stamp(wallClockFor(NOW, "Europe/London", { dayOffset: 1, hour: 13, minute: 0 })), "2026-10-8 13:00");
+  assert.equal(stamp(wallClockFor(NOW, "Europe/London", { dayOffset: 0, hour: 13, minute: 0 })), "2026-10-7 13:00"); // equal to now: no roll
+  assert.equal(stamp(wallClockFor(NOW, "Europe/London", { dayOffset: 0, hour: 12, minute: 59 })), "2026-10-8 12:59"); // a minute ago: tomorrow
+  // Tokyo is already at 21:00, so "tonight 7 pm" there has passed and means tomorrow
+  assert.equal(stamp(wallClockFor(NOW, "Asia/Tokyo", TONIGHT7)), "2026-10-8 19:00");
+});
+test("the same rule gives different answers at different times", () => {
+  const rule = "Mo-Su 09:00-17:00";
+  assert.equal(stateAt(rule, "Europe/London", null), "open"); // 13:00 now
+  assert.equal(stateAt(rule, "Europe/London", TONIGHT7), "closed");
+  assert.equal(stateAt(rule, "Europe/London", { dayOffset: 1, hour: 10, minute: 0 }), "open");
+});
+test("weekday rules look at tomorrow's weekday, not today's", () => {
+  const thursday = "Th 18:00-22:00"; // 2026-10-07 is a Wednesday
+  assert.equal(stateAt(thursday, "Europe/London", TONIGHT7), "closed");
+  assert.equal(stateAt(thursday, "Europe/London", { dayOffset: 1, hour: 19, minute: 0 }), "open");
+});
+test("an overnight rule is still open after midnight the next day", () => {
+  const night = "Mo-Su 18:00-02:00";
+  assert.equal(stateAt(night, "Europe/London", { dayOffset: 0, hour: 23, minute: 30 }), "open");
+  assert.equal(stateAt(night, "Europe/London", { dayOffset: 1, hour: 1, minute: 0 }), "open"); // Thursday 01:00 is Wednesday's late night
+  assert.equal(stateAt(night, "Europe/London", { dayOffset: 1, hour: 3, minute: 0 }), "closed");
+});
+test("the same instant: London's tonight is open, Tokyo's (rolled to tomorrow) is checked on its own clock", () => {
+  assert.equal(stateAt("Mo-Su 10:00-22:00", "Europe/London", TONIGHT7), "open");
+  assert.equal(stateAt("Mo-Su 10:00-22:00", "Asia/Tokyo", TONIGHT7), "open"); // Thursday 19:00 in Tokyo
+  assert.equal(stateAt("Mo-Su 09:00-17:00", "Asia/Tokyo", TONIGHT7), "closed");
+});
+await test("openStates takes the chosen time", async () => {
+  const got = await openStates(
+    [{ id: "a", lat: 51.5, lon: -0.1, hours: "Mo-Su 09:00-17:00" }, { id: "b", lat: 51.5, lon: -0.1, hours: "24/7" }, { id: "c", lat: 51.5, lon: -0.1 }],
+    "Europe/London", NOW, TONIGHT7);
+  assert.deepEqual(got, { a: "closed", b: "open", c: "unknown" });
+});
+test("labels and presets", () => {
+  assert.equal(describeOpenAt(null), "now");
+  assert.equal(describeOpenAt(TONIGHT7), "today at 7:00 pm");
+  assert.equal(describeOpenAt({ dayOffset: 1, hour: 13, minute: 0 }), "tomorrow at 1:00 pm");
+  assert.equal(formatClock(0, 5), "12:05 am");
+  assert.equal(formatClock(12, 0), "12:00 pm");
+  assert.equal(formatClock(23, 30), "11:30 pm");
+  assert.ok(sameOpenAt(null, null) && !sameOpenAt(null, TONIGHT7) && sameOpenAt(TONIGHT7, { ...TONIGHT7 }));
+  assert.equal(OPEN_AT_PRESETS[0].at, null);
+  assert.equal(new Set(OPEN_AT_PRESETS.map((p) => p.id)).size, OPEN_AT_PRESETS.length);
 });
 
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;

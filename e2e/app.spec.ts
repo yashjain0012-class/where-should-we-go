@@ -4,6 +4,9 @@ import {
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
+/** An option in the list under the wheel (the name also appears on the wheel itself). */
+const listed = (page: import("@playwright/test").Page, name: string) => page.locator("ul li .truncate", { hasText: name });
+
 test.describe("search and categories", () => {
   test("a search fills the wheel, the option list and the map", async ({ page, api }) => {
     await openApp(page);
@@ -80,10 +83,29 @@ test.describe("filters", () => {
     const before = api.places.length;
     await page.getByRole("switch", { name: /Open now/ }).click();
     await expect(page.getByText("Bone Daddies")).toHaveCount(0); // "off" opening hours: closed
-    await expect(page.getByText("open", { exact: true })).toHaveCount(1); // "24/7"
+    await expect(page.locator("li").filter({ hasText: "Hoxton Grill" }).getByText("open", { exact: true })).toBeVisible(); // "24/7"
     await expect(page.getByText("hours unknown").first()).toBeVisible();
     await expect(removeButtons(page)).toHaveCount(8); // the wheel refills from the pool
     expect(api.places).toHaveLength(before);
+  });
+
+  test("Open when? checks a chosen time on the place's clock, with no new search", async ({ page, api }) => {
+    await openApp(page);
+    await search(page);
+    const before = api.places.length;
+    await page.getByRole("switch", { name: /Open now/ }).click();
+    await page.getByLabel("Open when?").selectOption({ label: "Late, 11 pm" });
+    await expect(listed(page, "Delamina East")).toHaveCount(0); // open 9 to 5 only
+    await expect(page.getByRole("switch", { name: /Open then/ })).toBeVisible();
+    await page.getByLabel("Open when?").selectOption({ label: "Tomorrow 1 pm" });
+    await expect(listed(page, "Delamina East")).toHaveCount(1);
+    await page.getByLabel("Open when?").selectOption({ label: "Pick a time…" });
+    await page.getByLabel("Time").fill("23:30");
+    await expect(listed(page, "Delamina East")).toHaveCount(0);
+    expect(api.places).toHaveLength(before);
+    const winner = await spinAndWait(page);
+    await expect(page.locator(".result-pop")).toContainText(/Open (today|tomorrow) at 11:30 pm|Hours unknown/);
+    expect(winner.length).toBeGreaterThan(0);
   });
 
   test("a timeout on a big radius keeps the previous wheel and offers a smaller radius", async ({ page, api }) => {

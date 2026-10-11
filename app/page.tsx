@@ -14,7 +14,8 @@ import {
   snapRadius,
 } from "@/lib/categories";
 import { fireConfetti, stopConfetti } from "@/lib/celebrate";
-import { openStates } from "@/lib/hours";
+import { openStates, type OpenAt } from "@/lib/hours";
+import { describeOpenAt } from "@/lib/openAt";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
@@ -93,6 +94,7 @@ export default function Home() {
   const [radius, setRadius] = useState(DEFAULT_RADIUS);
   const [shownRadius, setShownRadius] = useState(DEFAULT_RADIUS);
   const [openNow, setOpenNow] = useState(false);
+  const [openAt, setOpenAt] = useState<OpenAt | null>(null); // null = check hours for right now
   const [candidates, setCandidates] = useState<Place[]>([]);
   const [tz, setTz] = useState<string | null>(null);
   const [openStateById, setOpenStateById] = useState<Record<string, OpenState>>({});
@@ -134,6 +136,7 @@ export default function Home() {
   const fallbackInput = useRef<HTMLInputElement>(null);
   // Mirrors for async callbacks that must not see stale state.
   const openNowRef = useRef(false);
+  const openAtRef = useRef<OpenAt | null>(null);
   const goodRadius = useRef(DEFAULT_RADIUS); // radius of the results currently on screen
   const hadResults = useRef(false);
 
@@ -175,6 +178,8 @@ export default function Home() {
       setCategory(shared.category);
       // A shared wheel carries only names and positions: no opening hours, so "Open now" resets.
       openNowRef.current = false;
+      openAtRef.current = null;
+      setOpenAt(null);
       hadResults.current = true;
       setOpenNow(false);
       setOpenStateById({});
@@ -235,7 +240,7 @@ export default function Home() {
         let states: Record<string, OpenState> = {};
         if (openNowRef.current) {
           setLoading("Checking opening hours…");
-          states = await openStates(data.places, data.tz);
+          states = await openStates(data.places, data.tz, new Date(), openAtRef.current);
           if (id !== requestId.current) return;
         }
         setCandidates(data.places);
@@ -364,7 +369,7 @@ export default function Home() {
     }
     const id = ++requestId.current;
     setLoading("Checking opening hours…");
-    const states = await openStates(candidates, tz);
+    const states = await openStates(candidates, tz, new Date(), openAtRef.current);
     if (id !== requestId.current) return;
     setOpenStateById(states);
     setOptions(pickWheel(candidates, true, states));
@@ -419,6 +424,22 @@ export default function Home() {
         card.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
       }
     }, 50);
+  }
+
+  // Change when "open" is checked (a time on the place's own clock); uses the pool we already have.
+  async function handleOpenAt(next: OpenAt | null) {
+    if (spinning) return;
+    setOpenAt(next);
+    openAtRef.current = next;
+    setWinner(null);
+    if (!openNowRef.current || loading) return; // a pending search will pick the new time up
+    const id = ++requestId.current;
+    setLoading("Checking opening hours…");
+    const states = await openStates(candidates, tz, new Date(), next);
+    if (id !== requestId.current) return;
+    setOpenStateById(states);
+    setOptions(pickWheel(candidates, true, states));
+    setLoading(null);
   }
 
   function flashNote(message: string) {
@@ -654,6 +675,8 @@ export default function Home() {
           onRadiusChange={handleRadiusChange}
           openNow={openNow}
           onOpenNowChange={(next) => void handleOpenNow(next)}
+          openAt={openAt}
+          onOpenAtChange={(next) => void handleOpenAt(next)}
           disabled={spinning}
         >
           {notice && (
@@ -825,7 +848,7 @@ export default function Home() {
               <p className="mt-1 text-2xl font-extrabold">{winner.name}</p>
               {openNow && (
                 <p className="mt-1 text-sm text-indigo-200">
-                  {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : "Open now"}
+                  {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : `Open ${describeOpenAt(openAt)}`}
                 </p>
               )}
               <a

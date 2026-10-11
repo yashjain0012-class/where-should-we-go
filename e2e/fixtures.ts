@@ -14,7 +14,7 @@ const NAMES: Record<string, string[]> = {
     "Barbican", "Brick Lane", "Whitechapel Gallery", "Victoria Park", "Chisenhale", "Rich Mix"],
 };
 
-/** 12 places sorted by distance (40 m, 120 m, ... 920 m). The first is open 24/7, the second never open. */
+/** 12 places sorted by distance (40 m, 120 m, ... 920 m). The first is open 24/7, the second never, the third 9 to 5 daily. */
 export function placesFor(category: string) {
   const names = NAMES[category] ?? NAMES.restaurants;
   return names.map((name, i) => ({
@@ -23,7 +23,7 @@ export function placesFor(category: string) {
     lat: CENTRE.lat + (i - 6) * 0.0006,
     lon: CENTRE.lon + (((i * 7) % 5) - 2) * 0.0007,
     distance: 40 + i * 80,
-    ...(i === 0 ? { hours: "24/7" } : i === 1 ? { hours: "off" } : {}),
+    ...(i === 0 ? { hours: "24/7" } : i === 1 ? { hours: "off" } : i === 2 ? { hours: "Mo-Su 09:00-17:00" } : {}),
   }));
 }
 
