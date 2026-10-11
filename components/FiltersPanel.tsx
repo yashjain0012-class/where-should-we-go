@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { MAX_RADIUS, MIN_RADIUS, RADIUS_STEP, formatRadius } from "@/lib/categories";
 import { NO_FILTERS, activeFilterCount, prettyCuisine, type AttrFilters, type Diet } from "@/lib/filters";
 import { OPEN_AT_PRESETS, sameOpenAt, type OpenAt } from "@/lib/openAt";
+import { formatWalk } from "@/lib/walk";
 
 interface FiltersPanelProps {
   radius: number;
@@ -101,6 +102,7 @@ export default function FiltersPanel({
           onChange={(e) => onRadiusChange(Number(e.target.value))}
           className="mt-1 h-11 w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
         />
+        <p className="text-xs text-indigo-900/70">About {formatWalk(radius)} to the edge, in a straight line</p>
         <div aria-hidden className="flex justify-between text-xs text-indigo-900/70">
           <span>{formatRadius(MIN_RADIUS)}</span>
           <span>{formatRadius(MAX_RADIUS)}</span>

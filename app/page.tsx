@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import FiltersPanel from "@/components/FiltersPanel";
+import ResultActions from "@/components/ResultActions";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
 import {
   CATEGORIES,
@@ -16,13 +17,14 @@ import { fireConfetti, stopConfetti } from "@/lib/celebrate";
 import {
   NO_FILTERS, activeFilterCount, cuisineOptions, describeAttrs, matchOf, prettyCuisine, selectWheel, type AttrFilters,
 } from "@/lib/filters";
-import { openStates, type OpenAt } from "@/lib/hours";
+import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
 import { describeOpenAt } from "@/lib/openAt";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
 import { pickIndex, targetRotation } from "@/lib/spin";
 import { tickTimes } from "@/lib/ticks";
+import { formatWalk, walkMinutes } from "@/lib/walk";
 import type { CategoryId, GeocodeResult, OpenState, Place, PlacesResponse } from "@/lib/types";
 
 // Leaflet only runs in the browser, so the map is never rendered on the server.
@@ -902,6 +904,11 @@ export default function Home() {
               >
                 Open in Google Maps ↗
               </a>
+              <ResultActions
+                key={winner.id}
+                place={winner}
+                suggestedStart={wallClockFor(new Date(), tz, openAt ?? { dayOffset: 0, hour: 19, minute: 0 })}
+              />
             </div>
           )}
         </div>
@@ -940,6 +947,11 @@ export default function Home() {
                     {i + 1}
                   </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
+                  {p.distance !== undefined && (
+                    <span title={formatWalk(p.distance)} className="shrink-0 text-[11px] text-slate-500">
+                      {walkMinutes(p.distance)} min
+                    </span>
+                  )}
                   {p.attrs?.cuisine?.[0] && (
                     <span className="hidden shrink-0 text-[11px] text-slate-500 sm:inline">{prettyCuisine(p.attrs.cuisine[0])}</span>
                   )}

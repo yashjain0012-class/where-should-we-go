@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, spinAndWait, spinButton, test,
 } from "./fixtures";
@@ -72,6 +73,39 @@ test.describe("spinning", () => {
       return problems;
     });
     expect(covered).toEqual([]);
+  });
+
+  test("the result card shows the walk, directions links and a calendar file", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const winner = await spinAndWait(page);
+    const card = page.locator(".result-pop");
+    await expect(card.getByText(/About \d+ min walk from where you searched/)).toBeVisible();
+    await expect(card.getByRole("link", { name: /Directions on foot/ })).toHaveAttribute(
+      "href", /google\.com\/maps\/dir\/\?api=1&destination=51\.\d+,-0\.\d+&travelmode=walking/,
+    );
+    await expect(card.getByRole("link", { name: "Apple Maps" })).toHaveAttribute("href", /maps\.apple\.com\/\?daddr=/);
+    await expect(card.getByRole("link", { name: "OpenStreetMap" })).toHaveAttribute("href", /openstreetmap\.org\/\?mlat=/);
+
+    await card.getByLabel("Date and time to add to your calendar").fill("2026-12-24T20:30");
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      card.getByRole("button", { name: "Add to calendar" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^where-should-we-go-[a-z0-9-]+\.ics$/);
+    const ics = readFileSync((await download.path())!, "utf8").replace(/\r\n /g, "");
+    expect(ics).toContain("BEGIN:VEVENT");
+    expect(ics).toContain("DTSTART:20261224T203000");
+    expect(ics).toContain("DTEND:20261224T220000");
+    expect(ics).toContain(`SUMMARY:Let's go to ${winner}`);
+  });
+
+  test("the distance slider says roughly how long that is on foot, and options show walking minutes", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await expect(page.getByText(/About 13 min walk to the edge/)).toBeVisible(); // 1 km
+    await expect(page.locator("li").filter({ hasText: "Hoxton Grill" })).toContainText("1 min"); // 40 m away
+    await expect(page.locator("li").filter({ hasText: "Maki" })).toContainText("8 min"); // 600 m away is 7.5 minutes, which rounds up
   });
 
   test("removing options shrinks the wheel and map; below two the spin is disabled; reset restores them", async ({ page }) => {
