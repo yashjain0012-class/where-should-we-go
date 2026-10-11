@@ -37,18 +37,18 @@ const MAX_DISTANCE_M = 5500;
 // Control characters, line separators and bidi overrides (used to spoof text).
 const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
 
-function clean(text: string): string {
+export function clean(text: string): string {
   return text.replace(UNSAFE_CHARS, " ").replace(/\s+/g, " ").trim();
 }
 
-function toBase64Url(text: string): string {
+export function toBase64Url(text: string): string {
   const bytes = new TextEncoder().encode(text);
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fromBase64Url(payload: string): string {
+export function fromBase64Url(payload: string): string {
   if (!/^[A-Za-z0-9_-]+$/.test(payload)) throw new Error("bad payload");
   const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4));
@@ -57,7 +57,7 @@ function fromBase64Url(payload: string): string {
 }
 
 /** FNV-1a: catches truncated or garbled links, not a security measure. */
-function checksum(text: string): string {
+export function checksum(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);

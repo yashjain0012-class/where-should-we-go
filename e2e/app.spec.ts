@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import {
-  RAINY_DAY, expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, searchAgain, spinAndWait, spinButton, test,
+  RAINY_DAY, expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, searchAgain, sliceAngles, spinAndWait, spinButton, test,
 } from "./fixtures";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
@@ -290,15 +290,7 @@ test.describe("favourites, hidden places and history", () => {
     await star(page, names[2]).click();
     await expect(star(page, names[2])).toHaveAttribute("aria-pressed", "true");
     // The slice is drawn twice as wide: measure its angle from the path's two arc end points.
-    const angles = await page.evaluate(() =>
-      [...document.querySelectorAll("svg[role=img] path")].map((p) => {
-        const nums = p.getAttribute("d")!.match(/-?[\d.]+/g)!.map(Number);
-        const [x1, y1, x2, y2] = [nums[2], nums[3], nums[nums.length - 2], nums[nums.length - 1]];
-        const a1 = Math.atan2(x1 - 100, 100 - y1);
-        const a2 = Math.atan2(x2 - 100, 100 - y2);
-        return ((((a2 - a1) * 180) / Math.PI) + 360) % 360;
-      }),
-    );
+    const angles = await sliceAngles(page);
     expect(angles).toHaveLength(8);
     expect(angles[2]).toBeCloseTo(2 * angles[0], 0);
     expect(angles[0]).toBeCloseTo(360 / 9, 0);
@@ -381,6 +373,93 @@ test.describe("favourites, hidden places and history", () => {
     await expect(removeButtons(page)).toHaveCount(8);
     await expect(page.getByRole("button", { name: /^Favourite / })).toHaveCount(0);
     await expect(page.getByText("My picks and preferences")).toHaveCount(0);
+  });
+});
+
+test.describe("my own list", () => {
+  const list = (page: import("@playwright/test").Page) => page.getByLabel("Your options");
+  const putOnWheel = (page: import("@playwright/test").Page) => page.getByRole("button", { name: /^Put on the wheel/ });
+
+  test("type a list, put it on the wheel, spin; there is no map or place link", async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await expect(page.getByLabel("Neighbourhood or city")).toHaveCount(0);
+    await expect(putOnWheel(page)).toBeDisabled(); // nothing typed yet
+    await list(page).fill("Pizza\nTacos x3\nSushi\nRamen");
+    await putOnWheel(page).click();
+    await expect(removeButtons(page)).toHaveCount(4);
+    expect(await optionNames(page)).toEqual(["Pizza", "Tacos", "Sushi", "Ramen"]);
+    const winner = await spinAndWait(page);
+    expect(["Pizza", "Tacos", "Sushi", "Ramen"]).toContain(winner);
+    await expect(page.locator(".result-pop")).toContainText("The wheel says");
+    await expect(page.getByRole("link", { name: /Google Maps/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Never show again|Add to calendar/ })).toHaveCount(0);
+    await expect(page.locator(".pin")).toHaveCount(0);
+    await expect(page.getByText("My picks and preferences")).toHaveCount(0);
+  });
+
+  test("a weight makes a bigger slice, and the pointer agrees with the result", async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await list(page).fill("A x3\nB\nC");
+    await putOnWheel(page).click();
+    await expect(removeButtons(page)).toHaveCount(3);
+    const angles = await sliceAngles(page);
+    expect(angles[0]).toBeCloseTo(216, 0);
+    expect(angles[1]).toBeCloseTo(72, 0);
+    expect(angles[2]).toBeCloseTo(72, 0);
+  });
+
+  test("notes explain what was left out, and a list needs two options", async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await list(page).fill("Only one");
+    await expect(putOnWheel(page)).toBeDisabled();
+    await list(page).fill("Pizza\npizza\nTacos");
+    await putOnWheel(page).click();
+    await expect(page.getByRole("status").filter({ hasText: "repeated option was left out" })).toBeVisible();
+    await expect(removeButtons(page)).toHaveCount(2);
+  });
+
+  test("switching back to places brings the previous wheel back", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const before = await optionNames(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await expect(removeButtons(page)).toHaveCount(0);
+    await list(page).fill("A\nB\nC");
+    await putOnWheel(page).click();
+    await expect(removeButtons(page)).toHaveCount(3);
+    await page.getByRole("button", { name: /Places near me/ }).click();
+    await expect(removeButtons(page)).toHaveCount(8);
+    expect(await optionNames(page)).toEqual(before);
+  });
+
+  test("a custom list shares as a link that opens the same list, weights included", async ({ page, browser }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await list(page).fill("Movie night x2\nBoard games\nHike");
+    await putOnWheel(page).click();
+    await page.getByRole("button", { name: /Copy/ }).click();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    expect(link).toContain("#c=1.");
+
+    const fresh = await browser.newPage();
+    const calls: string[] = [];
+    fresh.on("request", (r) => r.url().includes("/api/") && calls.push(r.url()));
+    await fresh.goto(link);
+    await fresh.waitForSelector("body[data-hydrated=true]");
+    await expect(removeButtons(fresh)).toHaveCount(3);
+    expect(await optionNames(fresh)).toEqual(["Movie night", "Board games", "Hike"]);
+    await expect(fresh.getByLabel("Your options")).toHaveValue("Movie night x2\nBoard games\nHike");
+    expect(calls).toEqual([]);
+    await fresh.close();
+  });
+
+  test("a broken custom link shows the friendly message", async ({ page }) => {
+    await openApp(page, "/#c=1.zzzz.not-a-real-payload");
+    await expect(page.getByRole("alert").filter({ hasText: "looks broken" })).toBeVisible();
+    await expect(page.getByLabel("Neighbourhood or city")).toBeVisible();
   });
 });
 

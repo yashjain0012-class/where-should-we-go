@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
+import CustomEditor from "@/components/CustomEditor";
 import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
 import ResultActions from "@/components/ResultActions";
@@ -15,6 +16,9 @@ import {
   snapRadius,
 } from "@/lib/categories";
 import { fireConfetti, stopConfetti } from "@/lib/celebrate";
+import {
+  customPlaces, customToText, decodeCustom, encodeCustom, parseCustomText, type CustomItem,
+} from "@/lib/custom";
 import {
   NO_FILTERS, activeFilterCount, cuisineOptions, describeAttrs, matchOf, prettyCuisine, selectWheel, type AttrFilters,
 } from "@/lib/filters";
@@ -46,10 +50,11 @@ const SPIN_MS_REDUCED = 1200;
 type Coords = { lat: number; lon: number; label: string };
 
 const SHARE_HASH = "#s=";
+const CUSTOM_HASH = "#c=";
 
 /** Drop a share hash from the address bar so a reload doesn't restore an old shared wheel. */
 function clearShareHash() {
-  if (window.location.hash.startsWith(SHARE_HASH)) {
+  if (window.location.hash.startsWith(SHARE_HASH) || window.location.hash.startsWith(CUSTOM_HASH)) {
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 }
@@ -134,6 +139,13 @@ export default function Home() {
   const [duration, setDuration] = useState(SPIN_MS);
   const [winner, setWinner] = useState<Place | null>(null);
   // Sharing: a wheel opened from a link, a broken-link notice, and copy/share feedback.
+  // "places" searches the map; "custom" is a list the person typed, for anything at all.
+  const [mode, setMode] = useState<"places" | "custom">("places");
+  const customMode = mode === "custom";
+  const [customText, setCustomText] = useState("");
+  const [customItems, setCustomItems] = useState<CustomItem[]>([]);
+  const [customNotes, setCustomNotes] = useState<string[]>([]);
+  const placesStash = useRef<Place[]>([]); // the places wheel, kept while the custom list is showing
   const [sharedMode, setSharedMode] = useState(false);
   const [editing, setEditing] = useState(false);
   const [linkProblem, setLinkProblem] = useState(false);
@@ -170,11 +182,15 @@ export default function Home() {
 
   // What the wheel would show with no manual removals ("Reset options" restores this).
   const fetched = useMemo(
-    () => pickWheel(candidates, openNow, openStateById, filters, preferIndoor, prefs),
-    [candidates, openNow, openStateById, filters, preferIndoor, prefs],
+    () => (customMode ? customPlaces(customItems) : pickWheel(candidates, openNow, openStateById, filters, preferIndoor, prefs)),
+    [customMode, customItems, candidates, openNow, openStateById, filters, preferIndoor, prefs],
   );
   // Starred places get a bigger slice.
-  const weights = useMemo(() => weightsFor(options, prefs), [options, prefs]);
+  // In a custom list each option carries the weight it was typed with.
+  const weights = useMemo(
+    () => (customMode ? options.map((o) => customItems[Number(o.id.slice("custom-".length))]?.weight ?? 1) : weightsFor(options, prefs)),
+    [customMode, customItems, options, prefs],
+  );
   const cuisineChips = useMemo(() => cuisineOptions(candidates), [candidates]);
 
   useEffect(
@@ -192,6 +208,33 @@ export default function Home() {
   // Everything is read in the browser, after hydration, so the server HTML never differs.
   useEffect(() => {
     function openSharedLink() {
+      if (window.location.hash.startsWith(CUSTOM_HASH)) {
+        const items = decodeCustom(window.location.hash);
+        if (!items) {
+          clearShareHash();
+          setLinkProblem(true);
+          return;
+        }
+        requestId.current++;
+        if (spinTimer.current) clearTimeout(spinTimer.current);
+        stopTicks();
+        stopConfetti();
+        setSpinning(false);
+        setLinkProblem(false);
+        setMode("custom");
+        setCustomItems(items);
+        setCustomText(customToText(items));
+        setCustomNotes([]);
+        setOptions(customPlaces(items));
+        setWinner(null);
+        setLoading(null);
+        setError(null);
+        setShareNote(null);
+        setShareFallbackUrl(null);
+        setSharedMode(false);
+        setEditing(false);
+        return;
+      }
       if (!window.location.hash.startsWith(SHARE_HASH)) return;
       const shared = decodeShare(window.location.hash);
       if (!shared) {
@@ -205,6 +248,7 @@ export default function Home() {
       stopConfetti();
       setSpinning(false);
       setLinkProblem(false);
+      setMode("places");
       setCoords({ ...shared.center, label: shared.label });
       setCategory(shared.category);
       // A shared wheel carries only names and positions: no opening hours, so "Open now" resets.
@@ -425,6 +469,37 @@ export default function Home() {
     setLoading(null);
   }
 
+  // Switch between searching for places and typing your own list. The places wheel is kept for when you come back.
+  function handleMode(next: "places" | "custom") {
+    if (spinning || next === mode) return;
+    requestId.current++; // ignore a search still in flight
+    setLoading(null);
+    setWinner(null);
+    setShareNote(null);
+    setShareFallbackUrl(null);
+    stopConfetti();
+    if (next === "custom") {
+      placesStash.current = options;
+      setMode("custom");
+      setOptions(customPlaces(customItems));
+    } else {
+      setMode("places");
+      setOptions(placesStash.current);
+    }
+  }
+
+  function handleApplyCustom(text: string) {
+    if (spinning) return;
+    const { items, notes } = parseCustomText(text);
+    if (items.length < 2) return;
+    setCustomItems(items);
+    setCustomNotes(notes);
+    setCustomText(customToText(items));
+    setOptions(customPlaces(items));
+    setWinner(null);
+    clearShareHash();
+  }
+
   function removeOption(id: string) {
     if (spinning) return;
     setOptions((prev) => prev.filter((p) => p.id !== id));
@@ -451,7 +526,7 @@ export default function Home() {
     spinTimer.current = setTimeout(() => {
       setSpinning(false);
       setWinner(chosen);
-      if (!sharedMode) recordWinner(chosen); // shared wheels have throwaway ids, so they are not remembered
+      if (!sharedMode && !customMode) recordWinner(chosen); // shared wheels have throwaway ids, so they are not remembered
       celebrate();
     }, ms + 60);
   }
@@ -518,6 +593,11 @@ export default function Home() {
 
   // Built synchronously from what's on screen right now (removed options are left out).
   function buildShareUrl(): string | null {
+    if (customMode) {
+      if (options.length < 2 || loading) return null;
+      const hash = encodeCustom(options.map((o, i) => ({ name: o.name, weight: weights[i] })));
+      return `${window.location.origin}${window.location.pathname}${hash}`;
+    }
     if (!coords || options.length === 0 || loading) return null;
     const hash = encodeShare({
       center: { lat: coords.lat, lon: coords.lon },
@@ -551,7 +631,9 @@ export default function Home() {
     if (!url) return;
     const data = {
       title: "Where should we go?",
-      text: `Help us pick! ${options.length} ${getCategory(category)?.label.toLowerCase()} near ${areaName(coords?.label ?? "")}. Spin the wheel:`,
+      text: customMode
+        ? `Help us pick! ${options.length} options. Spin the wheel:`
+        : `Help us pick! ${options.length} ${getCategory(category)?.label.toLowerCase()} near ${areaName(coords?.label ?? "")}. Spin the wheel:`,
       url,
     };
     if (canNativeShare && (!navigator.canShare || navigator.canShare(data))) {
@@ -651,7 +733,41 @@ export default function Home() {
         </div>
       )}
 
-      {(!sharedMode || editing) && (
+      {!sharedMode && (
+        <div role="group" aria-label="What to spin" className="mx-auto flex w-full max-w-md gap-1 rounded-full bg-white/70 p-1 shadow">
+          {(
+            [
+              ["places", "📍 Places near me"],
+              ["custom", "✏️ My own list"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={mode === id}
+              disabled={spinning}
+              onClick={() => handleMode(id)}
+              className={`min-h-11 flex-1 rounded-full px-3 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-60 ${
+                mode === id ? "bg-indigo-950 text-white shadow" : "text-indigo-900 hover:bg-indigo-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {customMode && (
+        <CustomEditor
+          text={customText}
+          onTextChange={setCustomText}
+          onApply={handleApplyCustom}
+          notes={customNotes}
+          disabled={spinning}
+        />
+      )}
+
+      {!customMode && (!sharedMode || editing) && (
       <form
         onSubmit={handleSearch}
         className="flex flex-col gap-4 rounded-3xl bg-white/80 p-4 shadow-lg backdrop-blur sm:p-6"
@@ -737,7 +853,7 @@ export default function Home() {
       </form>
       )}
 
-      {(!sharedMode || editing) && (
+      {!customMode && (!sharedMode || editing) && (
         <FiltersPanel
           radius={radius}
           onRadiusChange={handleRadiusChange}
@@ -879,7 +995,7 @@ export default function Home() {
             Search a place above to fill the wheel with nearby {cat?.label.toLowerCase()}.
           </p>
         )}
-        {searched && !loading && !sharedMode && fetched.length < 2 && (
+        {searched && !loading && !sharedMode && !customMode && fetched.length < 2 && (
           <div
             role="status"
             className="flex max-w-md flex-col items-center gap-3 text-center text-sm text-indigo-900"
@@ -929,17 +1045,18 @@ export default function Home() {
           {winner && (
             <div className="result-pop mx-auto w-full max-w-md rounded-2xl bg-indigo-950 p-5 text-center text-white shadow-xl">
               <p className="text-sm uppercase tracking-widest text-indigo-200">
-                {cat?.emoji} Let&apos;s go to
+                {customMode ? "🎡 The wheel says" : `${cat?.emoji} Let's go to`}
               </p>
               <p className="mt-1 text-2xl font-extrabold">{winner.name}</p>
-              {describeAttrs(winner.attrs).length > 0 && (
+              {!customMode && describeAttrs(winner.attrs).length > 0 && (
                 <p className="mt-1 text-sm text-indigo-200">{describeAttrs(winner.attrs).join(" · ")}</p>
               )}
-              {openNow && (
+              {!customMode && openNow && (
                 <p className="mt-1 text-sm text-indigo-200">
                   {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : `Open ${describeOpenAt(openAt)}`}
                 </p>
               )}
+              {!customMode && (
               <a
                 href={mapsUrl(winner)}
                 target="_blank"
@@ -948,7 +1065,8 @@ export default function Home() {
               >
                 Open in Google Maps ↗
               </a>
-              {!sharedMode && (
+              )}
+              {!sharedMode && !customMode && (
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   <button
                     type="button"
@@ -971,11 +1089,13 @@ export default function Home() {
                   </button>
                 </div>
               )}
-              <ResultActions
-                key={winner.id}
-                place={winner}
-                suggestedStart={wallClockFor(new Date(), tz, openAt ?? { dayOffset: 0, hour: 19, minute: 0 })}
-              />
+              {!customMode && (
+                <ResultActions
+                  key={winner.id}
+                  place={winner}
+                  suggestedStart={wallClockFor(new Date(), tz, openAt ?? { dayOffset: 0, hour: 19, minute: 0 })}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1040,7 +1160,7 @@ export default function Home() {
                         open
                       </span>
                     ))}
-                  {!sharedMode && (
+                  {!sharedMode && !customMode && (
                     <button
                       type="button"
                       onClick={() => toggleFavourite(p)}
@@ -1065,7 +1185,7 @@ export default function Home() {
             </ul>
           </div>
         )}
-        {searched && options.length === 0 && fetched.length > 0 && (
+        {(searched || customMode) && options.length === 0 && fetched.length > 0 && (
           <button
             type="button"
             onClick={() => setOptions(fetched)}
@@ -1075,9 +1195,9 @@ export default function Home() {
           </button>
         )}
 
-        {!sharedMode && <PrefsPanel prefs={prefs} disabled={spinning} />}
+        {!sharedMode && !customMode && <PrefsPanel prefs={prefs} disabled={spinning} />}
 
-        {(options.length > 0 || (searched && coords)) && (
+        {!customMode && (options.length > 0 || (searched && coords)) && (
           <div className="w-full">
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-indigo-900">
               Map

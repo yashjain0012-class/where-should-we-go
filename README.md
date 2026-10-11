@@ -44,6 +44,12 @@ Everything here is stored in **this browser only** (`localStorage`, key `wsg-pre
 - The wheel, the winner and the tick sound all use the same slice edges, so uneven slices still land under the pointer and tick as each edge passes. Shared links carry places, not preferences, and shared wheels do not offer favourites.
 
 
+## My own list
+
+The **✏️ My own list** switch turns the wheel into a general decision spinner: movies, chores, team lunch, anything. Type or paste options (one per line, or comma-separated), and add `x2` to `x5` after a name to give it a bigger slice. Up to 12 options of 40 characters; repeats and extras are dropped with a plain-language note. There is no map, search or place link in this mode, and nothing is remembered. Your places wheel is kept while you are away and comes back when you switch back.
+
+Custom lists share as `#c=1.<checksum>.<payload>`, where the payload is base64url JSON of `[[name, weight], ...]`. Opening one fills the editor and the wheel, with no API calls. Every link is checked for the checksum, length, weight range and name content, and a broken or tampered link falls back to the normal screen with a message.
+
 ## The spin: sound and celebration
 
 - **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
@@ -90,6 +96,7 @@ npm run test:filters   # rings and query builder, candidate parsing, opening hou
 npm run test:ticks     # easing curve vs CSS, tick schedule (count, slowing gaps, alignment with the wheel)
 npm run test:spin      # weighted picks (20,000 spins), landing under the pointer, ticks on uneven wheels
 npm run test:prefs     # remembered favourites, hidden places and history: validation, limits, clearing
+npm run test:custom    # custom lists: parsing, weights, limits, share links (valid, tampered, forged)
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -119,6 +126,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/spin.ts`: picks the winner first (weighted), then computes the rotation that lands on it
 - `lib/prefs.ts`, `components/PrefsPanel.tsx`: favourites, hidden places and history, kept in this browser
 - `lib/share.ts`: share-link encode, decode and validation
+- `lib/custom.ts`, `components/CustomEditor.tsx`: the "My own list" mode and its share links
 - `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti
 - `lib/overpass.ts`, `lib/geo.ts`: ring query builder and nearest-first candidate parsing
 - `lib/hours.ts`: opening-hours evaluation in the place's time zone

@@ -130,6 +130,19 @@ export async function searchAgain(page: Page, expectedOptions = 8) {
   await expect(removeButtons(page)).toHaveCount(expectedOptions);
 }
 
+/** How many degrees each drawn slice spans, in option order (measured from the SVG paths, before any winner is drawn on top). */
+export async function sliceAngles(page: Page): Promise<number[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll("svg[role=img] path")].map((p) => {
+      const nums = p.getAttribute("d")!.match(/-?[\d.]+/g)!.map(Number);
+      const [x1, y1, x2, y2] = [nums[2], nums[3], nums[nums.length - 2], nums[nums.length - 1]];
+      const a1 = Math.atan2(x1 - 100, 100 - y1);
+      const a2 = Math.atan2(x2 - 100, 100 - y2);
+      return ((((a2 - a1) * 180) / Math.PI) + 360) % 360;
+    }),
+  );
+}
+
 /** Option names in wheel order. */
 export async function optionNames(page: Page): Promise<string[]> {
   return page.locator("ul[aria-label=\"Wheel options\"] li .truncate").allTextContents();
