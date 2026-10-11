@@ -198,6 +198,11 @@ export default function Home() {
     return () => window.removeEventListener("hashchange", openSharedLink);
   }, []);
 
+  // Lets end-to-end tests wait until React has taken over: a click before that would submit the form natively.
+  useEffect(() => {
+    document.body.dataset.hydrated = "true";
+  }, []);
+
   // If the clipboard is blocked we show the link in a field; select it for the user.
   useEffect(() => {
     if (shareFallbackUrl) fallbackInput.current?.select();

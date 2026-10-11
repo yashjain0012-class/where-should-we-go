@@ -74,6 +74,17 @@ npm run test:ticks     # easing curve vs CSS, tick schedule (count, slowing gaps
 npm run build        # production build (also catches browser-only code running on the server)
 ```
 
+## Tests and CI
+
+```bash
+npm run test:unit   # share links, filters + opening hours (across time zones), tick timing
+npm run e2e         # builds, then runs the Playwright suite on a desktop and a phone profile
+```
+
+The end-to-end suite (`e2e/`) drives the real production build in Chromium with the OpenStreetMap services **mocked**, so it is fast, offline and deterministic. It covers search and categories, spinning (the result must be the slice under the pointer), removing options, the distance slider and Open now, a big-radius timeout, the "too few results" path, a share-link round trip in a fresh page (with no new searches), a broken link, ticking sound and mute, and confetti versus reduced motion.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, lint, the unit tests, a production build and the end-to-end suite on every push and pull request.
+
 ## Deploy
 
 Import the repo on Vercel. No environment variables are needed.
