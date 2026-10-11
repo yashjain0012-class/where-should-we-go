@@ -7,13 +7,15 @@ import Wheel, { SLICE_COLORS } from "@/components/Wheel";
 import {
   CATEGORIES,
   DEFAULT_RADIUS,
-  MAX_PLACES,
   MAX_RADIUS,
   formatRadius,
   getCategory,
   snapRadius,
 } from "@/lib/categories";
 import { fireConfetti, stopConfetti } from "@/lib/celebrate";
+import {
+  NO_FILTERS, activeFilterCount, cuisineOptions, describeAttrs, matchOf, prettyCuisine, selectWheel, type AttrFilters,
+} from "@/lib/filters";
 import { openStates, type OpenAt } from "@/lib/hours";
 import { describeOpenAt } from "@/lib/openAt";
 import { mapsUrl } from "@/lib/maps";
@@ -77,9 +79,14 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 /** The wheel: drop places known to be closed (when "Open now" is on), then the closest 8. */
-function pickWheel(candidates: Place[], openNow: boolean, states: Record<string, OpenState>): Place[] {
-  const pool = openNow ? candidates.filter((p) => states[p.id] !== "closed") : candidates;
-  return pool.slice(0, MAX_PLACES);
+function pickWheel(
+  candidates: Place[],
+  openNow: boolean,
+  states: Record<string, OpenState>,
+  filters: AttrFilters,
+  preferIndoor = false,
+): Place[] {
+  return selectWheel(candidates, { openNow, states, filters, preferIndoor });
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -95,6 +102,7 @@ export default function Home() {
   const [shownRadius, setShownRadius] = useState(DEFAULT_RADIUS);
   const [openNow, setOpenNow] = useState(false);
   const [openAt, setOpenAt] = useState<OpenAt | null>(null); // null = check hours for right now
+  const [filters, setFilters] = useState<AttrFilters>(NO_FILTERS); // cuisine, diet, accessibility
   const [candidates, setCandidates] = useState<Place[]>([]);
   const [tz, setTz] = useState<string | null>(null);
   const [openStateById, setOpenStateById] = useState<Record<string, OpenState>>({});
@@ -137,14 +145,16 @@ export default function Home() {
   // Mirrors for async callbacks that must not see stale state.
   const openNowRef = useRef(false);
   const openAtRef = useRef<OpenAt | null>(null);
+  const filtersRef = useRef<AttrFilters>(NO_FILTERS);
   const goodRadius = useRef(DEFAULT_RADIUS); // radius of the results currently on screen
   const hadResults = useRef(false);
 
   // What the wheel would show with no manual removals ("Reset options" restores this).
   const fetched = useMemo(
-    () => pickWheel(candidates, openNow, openStateById),
-    [candidates, openNow, openStateById],
+    () => pickWheel(candidates, openNow, openStateById, filters),
+    [candidates, openNow, openStateById, filters],
   );
+  const cuisineChips = useMemo(() => cuisineOptions(candidates), [candidates]);
 
   useEffect(
     () => () => {
@@ -180,6 +190,8 @@ export default function Home() {
       openNowRef.current = false;
       openAtRef.current = null;
       setOpenAt(null);
+      filtersRef.current = NO_FILTERS;
+      setFilters(NO_FILTERS);
       hadResults.current = true;
       setOpenNow(false);
       setOpenStateById({});
@@ -246,7 +258,7 @@ export default function Home() {
         setCandidates(data.places);
         setTz(data.tz);
         setOpenStateById(states);
-        setOptions(pickWheel(data.places, openNowRef.current, states));
+        setOptions(pickWheel(data.places, openNowRef.current, states, filtersRef.current));
         setSearched(true);
         setShownRadius(rad);
         goodRadius.current = rad;
@@ -337,6 +349,11 @@ export default function Home() {
   function handleCategory(next: CategoryId) {
     if (spinning || next === category) return;
     setCategory(next);
+    if (filtersRef.current.cuisines.length) {
+      const cleared = { ...filtersRef.current, cuisines: [] };
+      filtersRef.current = cleared;
+      setFilters(cleared);
+    }
     if (coords) void loadPlaces(coords, next, radius);
   }
 
@@ -364,7 +381,7 @@ export default function Home() {
     setWinner(null);
     if (loading) return; // a search is in flight and will apply the toggle when it lands
     if (!next) {
-      setOptions(pickWheel(candidates, false, {}));
+      setOptions(pickWheel(candidates, false, {}, filtersRef.current));
       return;
     }
     const id = ++requestId.current;
@@ -372,7 +389,7 @@ export default function Home() {
     const states = await openStates(candidates, tz, new Date(), openAtRef.current);
     if (id !== requestId.current) return;
     setOpenStateById(states);
-    setOptions(pickWheel(candidates, true, states));
+    setOptions(pickWheel(candidates, true, states, filtersRef.current));
     setLoading(null);
   }
 
@@ -426,6 +443,15 @@ export default function Home() {
     }, 50);
   }
 
+  // Cuisine / diet / accessibility filters work on the pool we already have, so changing them never needs a new search.
+  function handleFilters(next: AttrFilters) {
+    if (spinning) return;
+    setFilters(next);
+    filtersRef.current = next;
+    setWinner(null);
+    setOptions(pickWheel(candidates, openNowRef.current, openStateById, next));
+  }
+
   // Change when "open" is checked (a time on the place's own clock); uses the pool we already have.
   async function handleOpenAt(next: OpenAt | null) {
     if (spinning) return;
@@ -438,7 +464,7 @@ export default function Home() {
     const states = await openStates(candidates, tz, new Date(), next);
     if (id !== requestId.current) return;
     setOpenStateById(states);
-    setOptions(pickWheel(candidates, true, states));
+    setOptions(pickWheel(candidates, true, states, filtersRef.current));
     setLoading(null);
   }
 
@@ -515,7 +541,7 @@ export default function Home() {
           fetched.length === 0 ? "No places match" : "Only 1 place matches"
         } these filters within ${formatRadius(shownRadius)}. Try a wider radius${
           openNow ? " or show closed places too" : ""
-        }.`;
+        }${activeFilterCount(filters) ? ", or clear the cuisine and dietary filters" : ""}.`;
   // With "Open now" on, anything not confirmed open has no usable hours.
   const unknownIds = useMemo<ReadonlySet<string>>(
     () =>
@@ -677,6 +703,10 @@ export default function Home() {
           onOpenNowChange={(next) => void handleOpenNow(next)}
           openAt={openAt}
           onOpenAtChange={(next) => void handleOpenAt(next)}
+          filters={filters}
+          onFiltersChange={handleFilters}
+          cuisineChips={cuisineChips}
+          foodCategory={category !== "things"}
           disabled={spinning}
         >
           {notice && (
@@ -830,6 +860,16 @@ export default function Home() {
                   Show closed places too
                 </button>
               )}
+              {activeFilterCount(filters) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleFilters(NO_FILTERS)}
+                  disabled={spinning}
+                  className="min-h-11 rounded-xl border-2 border-indigo-600 bg-white px-4 font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -846,6 +886,9 @@ export default function Home() {
                 {cat?.emoji} Let&apos;s go to
               </p>
               <p className="mt-1 text-2xl font-extrabold">{winner.name}</p>
+              {describeAttrs(winner.attrs).length > 0 && (
+                <p className="mt-1 text-sm text-indigo-200">{describeAttrs(winner.attrs).join(" · ")}</p>
+              )}
               {openNow && (
                 <p className="mt-1 text-sm text-indigo-200">
                   {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : `Open ${describeOpenAt(openAt)}`}
@@ -897,6 +940,17 @@ export default function Home() {
                     {i + 1}
                   </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
+                  {p.attrs?.cuisine?.[0] && (
+                    <span className="hidden shrink-0 text-[11px] text-slate-500 sm:inline">{prettyCuisine(p.attrs.cuisine[0])}</span>
+                  )}
+                  {activeFilterCount(filters) > 0 && matchOf(p, filters) === "unknown" && (
+                    <span
+                      title="Not tagged in OpenStreetMap, so it may or may not match"
+                      className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                    >
+                      unconfirmed
+                    </span>
+                  )}
                   {openNow &&
                     (unknownIds.has(p.id) ? (
                       <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">

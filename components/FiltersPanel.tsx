@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { MAX_RADIUS, MIN_RADIUS, RADIUS_STEP, formatRadius } from "@/lib/categories";
+import { NO_FILTERS, activeFilterCount, prettyCuisine, type AttrFilters, type Diet } from "@/lib/filters";
 import { OPEN_AT_PRESETS, sameOpenAt, type OpenAt } from "@/lib/openAt";
 
 interface FiltersPanelProps {
@@ -10,10 +11,43 @@ interface FiltersPanelProps {
   /** When to check opening hours: null = now, otherwise a time on the place's own clock. */
   openAt: OpenAt | null;
   onOpenAtChange: (next: OpenAt | null) => void;
+  /** Cuisine, diet and accessibility choices. */
+  filters: AttrFilters;
+  onFiltersChange: (next: AttrFilters) => void;
+  /** Cuisines found among the nearby places, for the chips. */
+  cuisineChips: { name: string; count: number }[];
+  /** Diet and cuisine only make sense for food and drink. */
+  foodCategory: boolean;
   /** Disable the controls while the wheel is spinning. */
   disabled: boolean;
   /** Messages or actions that belong to the filters (for example a timeout notice). */
   children?: ReactNode;
+}
+
+function Chip({
+  pressed,
+  disabled,
+  onClick,
+  children,
+}: {
+  pressed: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      className={`min-h-11 rounded-full px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 ${
+        pressed ? "bg-indigo-950 text-white shadow" : "bg-white text-indigo-900 ring-1 ring-indigo-200 hover:bg-indigo-100"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function FiltersPanel({
@@ -23,6 +57,10 @@ export default function FiltersPanel({
   onOpenNowChange,
   openAt,
   onOpenAtChange,
+  filters,
+  onFiltersChange,
+  cuisineChips,
+  foodCategory,
   disabled,
   children,
 }: FiltersPanelProps) {
@@ -30,6 +68,12 @@ export default function FiltersPanel({
   const preset = OPEN_AT_PRESETS.find((p) => sameOpenAt(p.at, openAt));
   const selected = custom || !preset ? "custom" : preset.id;
   const pad = (n: number) => String(n).padStart(2, "0");
+  const chosen = activeFilterCount(filters);
+  const toggleCuisine = (name: string) =>
+    onFiltersChange({
+      ...filters,
+      cuisines: filters.cuisines.includes(name) ? filters.cuisines.filter((c) => c !== name) : [...filters.cuisines, name],
+    });
 
   return (
     <section
@@ -146,6 +190,67 @@ export default function FiltersPanel({
           <p className="text-xs text-indigo-900/70">Checked on the place&apos;s own clock. A time that has passed means tomorrow.</p>
         </div>
       )}
+
+      <details className="group rounded-xl bg-indigo-50 px-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-semibold text-indigo-950">
+          <span>More filters{chosen > 0 ? ` (${chosen})` : ""}</span>
+          <span aria-hidden className="text-indigo-700 transition group-open:rotate-180">▾</span>
+        </summary>
+        <div className="flex flex-col gap-3 pb-3 pt-1">
+          {foodCategory && (
+            <fieldset>
+              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Diet</legend>
+              <div className="flex flex-wrap gap-2">
+                {(["any", "vegetarian", "vegan"] as Diet[]).map((d) => (
+                  <Chip key={d} pressed={filters.diet === d} disabled={disabled} onClick={() => onFiltersChange({ ...filters, diet: d })}>
+                    {d === "any" ? "Any" : d.charAt(0).toUpperCase() + d.slice(1)}
+                  </Chip>
+                ))}
+              </div>
+            </fieldset>
+          )}
+          {foodCategory && cuisineChips.length > 0 && (
+            <fieldset>
+              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Cuisine nearby</legend>
+              <div className="flex flex-wrap gap-2">
+                {cuisineChips.map((c) => (
+                  <Chip key={c.name} pressed={filters.cuisines.includes(c.name)} disabled={disabled} onClick={() => toggleCuisine(c.name)}>
+                    {prettyCuisine(c.name)} ({c.count})
+                  </Chip>
+                ))}
+              </div>
+            </fieldset>
+          )}
+          <fieldset>
+            <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Good to know</legend>
+            <div className="flex flex-wrap gap-2">
+              <Chip pressed={filters.outdoor} disabled={disabled} onClick={() => onFiltersChange({ ...filters, outdoor: !filters.outdoor })}>
+                Outdoor seating
+              </Chip>
+              <Chip pressed={filters.wheelchair} disabled={disabled} onClick={() => onFiltersChange({ ...filters, wheelchair: !filters.wheelchair })}>
+                Wheelchair accessible
+              </Chip>
+              <Chip pressed={filters.takeaway} disabled={disabled} onClick={() => onFiltersChange({ ...filters, takeaway: !filters.takeaway })}>
+                Takeaway
+              </Chip>
+            </div>
+          </fieldset>
+          <p className="text-xs text-indigo-900/70">
+            Only places tagged in OpenStreetMap can be confirmed. Untagged places come after confirmed matches and are marked
+            &quot;unconfirmed&quot;; places tagged the other way are left out.
+          </p>
+          {chosen > 0 && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onFiltersChange(NO_FILTERS)}
+              className="min-h-11 self-start text-sm font-semibold text-indigo-700 underline disabled:opacity-60"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+      </details>
 
       {children}
     </section>

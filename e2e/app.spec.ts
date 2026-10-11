@@ -45,6 +45,35 @@ test.describe("spinning", () => {
     await expect(page.locator("g.slice-bounce")).toHaveCount(1);
   });
 
+  test("the wheel never takes clicks away from the Spin button, whatever angle it stopped at", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    // The wheel is a square box drawn as a circle and it rotates, so its invisible corners can reach the button below it.
+    // A click that lands on the wheel instead of Spin was the cause of an intermittent end-to-end failure, so the wheel
+    // is made non-interactive and this checks both that and the hit target at several angles.
+    const wheelIgnoresPointer = await page.evaluate(() => {
+      const wheel = document.querySelector("svg[role=img]")!.parentElement!;
+      return getComputedStyle(wheel).pointerEvents === "none" && getComputedStyle(wheel.querySelector("svg")!).pointerEvents === "none";
+    });
+    expect(wheelIgnoresPointer).toBe(true);
+    const covered = await page.evaluate(() => {
+      const wheel = document.querySelector("svg[role=img]")!.parentElement!;
+      const button = [...document.querySelectorAll("button")].find((b) => /^Spin/.test(b.textContent ?? ""))!;
+      const problems: string[] = [];
+      button.scrollIntoView({ block: "center" }); // elementFromPoint only sees what is on screen
+      for (const angle of [0, 20, 45, 70, 90, 135, 200, 315]) {
+        wheel.style.transform = `rotate(${angle}deg)`;
+        const r = button.getBoundingClientRect();
+        for (const [fx, fy] of [[0.5, 0.5], [0.5, 0.15], [0.2, 0.5], [0.8, 0.5]]) {
+          const hit = document.elementFromPoint(r.left + r.width * fx, r.top + r.height * fy);
+          if (!hit || !button.contains(hit)) problems.push(`${angle} deg at ${fx},${fy}: ${hit?.tagName}`);
+        }
+      }
+      return problems;
+    });
+    expect(covered).toEqual([]);
+  });
+
   test("removing options shrinks the wheel and map; below two the spin is disabled; reset restores them", async ({ page }) => {
     await openApp(page);
     await search(page);
@@ -132,6 +161,54 @@ test.describe("filters", () => {
     await page.getByRole("button", { name: /^Widen to/ }).click();
     await expect.poll(() => api.places.at(-1)!.searchParams.get("radius")).toBe("1500");
     await expect(removeButtons(page)).toHaveCount(8);
+  });
+});
+
+test.describe("cuisine and dietary filters", () => {
+  const openMore = (page: import("@playwright/test").Page) => page.getByText(/^More filters/).click();
+
+  test("vegetarian: confirmed places first, contradicting ones dropped, untagged ones labelled", async ({ page, api }) => {
+    await openApp(page);
+    await search(page);
+    const before = api.places.length;
+    await openMore(page);
+    await page.getByRole("button", { name: "Vegetarian", exact: true }).click();
+    const names = await optionNames(page);
+    expect(names.slice(0, 3)).toEqual(["Hoxton Grill", "Delamina East", "Kennedy's"]); // tagged vegetarian-friendly
+    expect(names).not.toContain("Bone Daddies"); // tagged "no"
+    expect(names).not.toContain("Indi Go"); // tagged "no"
+    expect(names).toHaveLength(8);
+    await expect(page.locator("li").filter({ hasText: "Hoxton Grill" }).getByText("unconfirmed")).toHaveCount(0);
+    await expect(page.getByText("unconfirmed").first()).toBeVisible();
+    expect(api.places).toHaveLength(before); // no new search
+  });
+
+  test("cuisine chips come from the nearby places; vegan and clear all work", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await openMore(page);
+    await expect(page.getByRole("button", { name: "Italian (2)" })).toBeVisible();
+    await page.getByRole("button", { name: "Indian (1)" }).click();
+    expect((await optionNames(page))[0]).toBe("Delamina East");
+    await expect(page.getByText(/^More filters \(1\)/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Clear all" }).click();
+    expect((await optionNames(page)).slice(0, 3)).toEqual(["Hoxton Grill", "Bone Daddies", "Delamina East"]); // nearest first again
+
+    await page.getByRole("button", { name: "Vegan", exact: true }).click();
+    expect((await optionNames(page))[0]).toBe("Delamina East"); // the only place tagged vegan
+  });
+
+  test("changing category clears the cuisine choice but keeps the other filters", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await openMore(page);
+    await page.getByRole("button", { name: "Italian (2)" }).click();
+    await page.getByRole("button", { name: "Takeaway", exact: true }).click();
+    await page.getByRole("button", { name: /Cafés/ }).click();
+    await expect(page.getByText("Beans & Beyond")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Takeaway", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: /^Italian/ })).toHaveAttribute("aria-pressed", "false"); // no longer selected
   });
 });
 

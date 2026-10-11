@@ -14,6 +14,15 @@ const NAMES: Record<string, string[]> = {
     "Barbican", "Brick Lane", "Whitechapel Gallery", "Victoria Park", "Chisenhale", "Rich Mix"],
 };
 
+/** OpenStreetMap-style tags for some of the places (the rest are untagged, as most real places are). */
+const ATTRS: Record<number, Record<string, unknown>> = {
+  0: { kind: "restaurant", cuisine: ["italian"], vegetarian: "yes", outdoorSeating: true },
+  1: { kind: "restaurant", cuisine: ["japanese"], vegetarian: "no" },
+  2: { kind: "restaurant", cuisine: ["indian"], vegetarian: "only", vegan: "yes", wheelchair: "yes" },
+  3: { kind: "restaurant", cuisine: ["italian"], vegetarian: "yes" },
+  5: { kind: "restaurant", cuisine: ["burger"], vegetarian: "no" },
+};
+
 /** 12 places sorted by distance (40 m, 120 m, ... 920 m). The first is open 24/7, the second never, the third 9 to 5 daily. */
 export function placesFor(category: string) {
   const names = NAMES[category] ?? NAMES.restaurants;
@@ -23,6 +32,7 @@ export function placesFor(category: string) {
     lat: CENTRE.lat + (i - 6) * 0.0006,
     lon: CENTRE.lon + (((i * 7) % 5) - 2) * 0.0007,
     distance: 40 + i * 80,
+    ...(ATTRS[i] ? { attrs: ATTRS[i] } : {}),
     ...(i === 0 ? { hours: "24/7" } : i === 1 ? { hours: "off" } : i === 2 ? { hours: "Mo-Su 09:00-17:00" } : {}),
   }));
 }

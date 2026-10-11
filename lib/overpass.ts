@@ -1,6 +1,6 @@
 import { POOL_SIZE } from "./categories";
 import { distanceMetres } from "./geo";
-import type { Place } from "./types";
+import type { Place, PlaceAttrs } from "./types";
 
 /**
  * Overpass can't sort by distance, and a capped `out` returns elements by id, so a plain
@@ -59,7 +59,39 @@ export interface OverpassElement {
   lat?: number;
   lon?: number;
   center?: { lat: number; lon: number };
-  tags?: { name?: string; opening_hours?: string };
+  tags?: Record<string, string | undefined> & { name?: string; opening_hours?: string };
+}
+
+const YES_NO_ONLY = new Set(["yes", "only", "no"]);
+
+/** The few OpenStreetMap tags the filters use, normalised. Anything missing or unrecognised is simply left out. */
+export function parseAttrs(tags: OverpassElement["tags"]): PlaceAttrs | undefined {
+  if (!tags) return undefined;
+  const attrs: PlaceAttrs = {};
+  const kind = tags.amenity ?? tags.leisure ?? tags.tourism;
+  if (kind) attrs.kind = kind.toLowerCase();
+  if (tags.cuisine) {
+    const cuisine = tags.cuisine
+      .split(";")
+      .map((c) => c.trim().toLowerCase())
+      .filter((c) => c && c.length <= 24);
+    if (cuisine.length) attrs.cuisine = [...new Set(cuisine)].slice(0, 3);
+  }
+  const yno = (v: string | undefined) => {
+    const t = v?.trim().toLowerCase();
+    return t && YES_NO_ONLY.has(t) ? (t as "yes" | "only" | "no") : undefined;
+  };
+  const vegetarian = yno(tags["diet:vegetarian"]);
+  if (vegetarian) attrs.vegetarian = vegetarian;
+  const vegan = yno(tags["diet:vegan"]);
+  if (vegan) attrs.vegan = vegan;
+  const takeaway = yno(tags.takeaway);
+  if (takeaway) attrs.takeaway = takeaway;
+  const outdoor = tags.outdoor_seating?.trim().toLowerCase();
+  if (outdoor === "yes" || outdoor === "no") attrs.outdoorSeating = outdoor === "yes";
+  const wheelchair = tags.wheelchair?.trim().toLowerCase();
+  if (wheelchair === "yes" || wheelchair === "limited" || wheelchair === "no") attrs.wheelchair = wheelchair;
+  return Object.keys(attrs).length ? attrs : undefined;
 }
 
 const MAX_HOURS_CHARS = 400;
@@ -78,6 +110,7 @@ export function parseCandidates(
     if (!name || lat === undefined || lon === undefined) continue;
 
     const hours = el.tags?.opening_hours?.trim();
+    const attrs = parseAttrs(el.tags);
     const place: Place = {
       id: `${el.type}/${el.id}`,
       name,
@@ -86,6 +119,7 @@ export function parseCandidates(
       distance: Math.round(distanceMetres(centre.lat, centre.lon, lat, lon)),
       // Over-long values are dropped rather than cut, since a cut rule would be misread.
       ...(hours && hours.length <= MAX_HOURS_CHARS ? { hours } : {}),
+      ...(attrs ? { attrs } : {}),
     };
     const key = name.toLowerCase();
     const existing = byName.get(key);

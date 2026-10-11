@@ -10,8 +10,9 @@
     "test:share": "tsc lib/share.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-share.mjs",
     "test:filters": "tsc lib/overpass.ts lib/hours.ts lib/openAt.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-filters.mjs",
     "test:ticks": "tsc lib/ticks.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-ticks.mjs",
-    "test:unit": "npm run test:share && npm run test:filters && npm run test:ticks",
-    "e2e": "npm run build && playwright test"
+    "test:unit": "npm run test:share && npm run test:filters && npm run test:attrs && npm run test:ticks",
+    "e2e": "npm run build && playwright test",
+    "test:attrs": "tsc lib/overpass.ts lib/filters.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-attrs.mjs"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",

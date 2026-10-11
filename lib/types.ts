@@ -9,6 +9,21 @@ export interface Place {
   distance?: number;
   /** Raw OpenStreetMap opening_hours tag, if the place has one (search results only). */
   hours?: string;
+  /** Cuisine, diet, accessibility and similar tags the place has in OpenStreetMap (search results only). */
+  attrs?: PlaceAttrs;
+}
+
+/** What OpenStreetMap says about a place. A missing field means "not tagged", never "no". */
+export interface PlaceAttrs {
+  /** Primary kind, e.g. "restaurant", "park", "museum". */
+  kind?: string;
+  /** Lower-case cuisines, at most 3, e.g. ["italian", "pizza"]. */
+  cuisine?: string[];
+  vegetarian?: "yes" | "only" | "no";
+  vegan?: "yes" | "only" | "no";
+  outdoorSeating?: boolean;
+  wheelchair?: "yes" | "limited" | "no";
+  takeaway?: "yes" | "only" | "no";
 }
 
 export interface GeocodeResult {

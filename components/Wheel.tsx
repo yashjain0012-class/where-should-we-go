@@ -72,7 +72,8 @@ export default function Wheel({ places, rotation, spinning, durationMs, winnerId
         }}
       />
       <div
-        className="h-full w-full rounded-full shadow-xl ring-8 ring-white"
+        // The wheel is only ever looked at. Without this, the corners of its (square, rotating) box can sit over the button below it.
+        className="pointer-events-none h-full w-full rounded-full shadow-xl ring-8 ring-white"
         style={{
           transform: `rotate(${rotation}deg)`,
           // The same curve lib/ticks.ts uses to time the ticking sound.
