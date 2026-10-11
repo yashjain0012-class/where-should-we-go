@@ -121,22 +121,37 @@ export async function search(page: Page, query = "Shoreditch, London", expectedO
   await expect(removeButtons(page)).toHaveCount(expectedOptions);
 }
 
+/** Search again for the same place, and wait for the new results (not just for the old wheel to still be there). */
+export async function searchAgain(page: Page, expectedOptions = 8) {
+  await Promise.all([
+    page.waitForResponse((r) => r.url().includes("/api/places")),
+    page.getByRole("button", { name: "Search", exact: true }).click(),
+  ]);
+  await expect(removeButtons(page)).toHaveCount(expectedOptions);
+}
+
 /** Option names in wheel order. */
 export async function optionNames(page: Page): Promise<string[]> {
-  return page.locator("ul li .truncate").allTextContents();
+  return page.locator("ul[aria-label=\"Wheel options\"] li .truncate").allTextContents();
 }
 
 /** Which option is under the pointer, worked out from the wheel's real rotation. */
 export async function optionUnderPointer(page: Page): Promise<string> {
-  const { rotation, names } = await page.evaluate(() => {
+  const { rotation, names, weights } = await page.evaluate(() => {
     const wheel = document.querySelector("svg[role=img]")!.parentElement!;
     const rotation = parseFloat(wheel.style.transform.match(/rotate\(([-\d.]+)deg\)/)![1]);
-    const names = [...document.querySelectorAll("ul li .truncate")].map((e) => e.textContent!);
-    return { rotation, names };
+    const names = [...document.querySelectorAll("ul[aria-label=\"Wheel options\"] li .truncate")].map((e) => e.textContent!);
+    // A starred option has a slice twice as big (read from the list, not from the app's own state).
+    const weights = [...document.querySelectorAll("ul[aria-label=\"Wheel options\"] li")].map((li) => (li.querySelector("button[aria-pressed=true]") ? 2 : 1));
+    return { rotation, names, weights };
   });
-  const slice = 360 / names.length;
-  const index = Math.floor((((-rotation % 360) + 360) % 360) / slice) % names.length;
-  return names[index];
+  const angle = (((-rotation % 360) + 360) % 360);
+  let edge = 0;
+  for (let i = 0; i < names.length; i++) {
+    edge += (weights[i] / weights.reduce((a, b) => a + b, 0)) * 360;
+    if (angle < edge) return names[i];
+  }
+  return names[names.length - 1];
 }
 
 /** Spin and wait for the result card; returns the winner's name. */

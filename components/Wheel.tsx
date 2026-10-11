@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { sliceEdges } from "@/lib/spin";
 import { cssSpinEasing } from "@/lib/ticks";
 import type { Place } from "@/lib/types";
 
@@ -35,6 +36,8 @@ function truncate(name: string, max: number): string {
 
 interface WheelProps {
   places: Place[];
+  /** Relative slice sizes, one per place (default: all equal). A favourite gets a bigger slice. */
+  weights?: number[];
   rotation: number;
   spinning: boolean;
   durationMs: number;
@@ -45,9 +48,9 @@ interface WheelProps {
 /** How far (in SVG units) the winning slice pops outward during its bounce. */
 const BOUNCE_DISTANCE = 7;
 
-export default function Wheel({ places, rotation, spinning, durationMs, winnerId = null }: WheelProps) {
+export default function Wheel({ places, weights, rotation, spinning, durationMs, winnerId = null }: WheelProps) {
   const n = places.length;
-  const slice = 360 / Math.max(n, 1);
+  const edges = sliceEdges(weights && weights.length === n ? weights : n || 1);
   const fontSize = n <= 4 ? 10 : 8.5;
   const maxChars = Math.floor(62 / (fontSize * 0.55));
 
@@ -107,7 +110,7 @@ export default function Wheel({ places, rotation, spinning, durationMs, winnerId
           {drawOrder.map(({ place: p, index: i }) => {
             const isWinner = p.id === winnerId;
             // Outward direction of this slice's middle, measured clockwise from the top.
-            const mid = ((i + 0.5) * slice * Math.PI) / 180;
+            const mid = (((edges[i] + edges[i + 1]) / 2) * Math.PI) / 180;
             const bounce = isWinner
               ? ({
                   "--dx": `${(Math.sin(mid) * BOUNCE_DISTANCE).toFixed(2)}px`,
@@ -120,7 +123,7 @@ export default function Wheel({ places, rotation, spinning, durationMs, winnerId
                   <circle cx={CX} cy={CY} r={R} fill={SLICE_COLORS[0]} />
                 ) : (
                   <path
-                    d={slicePath(i * slice, (i + 1) * slice)}
+                    d={slicePath(edges[i], edges[i + 1])}
                     fill={SLICE_COLORS[i % SLICE_COLORS.length]}
                     stroke={isWinner ? "#1e1b4b" : "#fff"}
                     strokeWidth={isWinner ? 2.5 : 1}
@@ -137,7 +140,7 @@ export default function Wheel({ places, rotation, spinning, durationMs, winnerId
                   stroke="rgba(0,0,0,.45)"
                   strokeWidth="0.6"
                   paintOrder="stroke"
-                  transform={`rotate(${(i + 0.5) * slice - 90} ${CX} ${CY})`}
+                  transform={`rotate(${(edges[i] + edges[i + 1]) / 2 - 90} ${CX} ${CY})`}
                 >
                   {truncate(p.name, maxChars)}
                 </text>

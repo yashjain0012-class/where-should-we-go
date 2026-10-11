@@ -27,6 +27,23 @@ Notes and limits:
 - The package's typings declare a named export that doesn't exist at runtime; `lib/hours.ts` uses the default export.
 - The API validates the radius (500 to 5000 m), rounds coordinates to about 110 m so near-identical searches share a cache entry, and applies a best-effort per-IP rate limit (in-memory, so per server instance; a Vercel Firewall rate-limit rule is the real control).
 
+## More ways to decide
+
+- **Open at…**: check opening hours for tonight or tomorrow, not just now (the place's own clock).
+- **Cuisine, diet and access filters** from OpenStreetMap tags (vegetarian, vegan, outdoor seating, wheelchair access, takeaway). Places with no tag stay in, marked "unconfirmed", never silently dropped.
+- **Walking time** on every option and the result, plus **directions** (Google, Apple, OpenStreetMap) and **Add to calendar** (an `.ics` file made in the browser).
+- **Weather** from [Open-Meteo](https://open-meteo.com/) (free, no key): a chip with the temperature, and "Indoor places first" when it is raining or about to.
+
+## Your picks (no account)
+
+Everything here is stored in **this browser only** (`localStorage`, key `wsg-prefs`) and never sent anywhere. Open **My picks and preferences** under the wheel to see it all, and **Clear my data** to wipe it.
+
+- **★ Favourite** a place (on its chip or the result card): it gets a **slice twice as big**, so it is twice as likely to win, and it is kept on the wheel ahead of nearer places.
+- **🚫 Never show again** hides a place from every future wheel; "Show again" undoes it.
+- **Recent winners are skipped**: a place that won in the last 14 days (choose 7, 14, 30 or never) stays off the next wheel, so you don't eat at the same place twice.
+- The wheel, the winner and the tick sound all use the same slice edges, so uneven slices still land under the pointer and tick as each edge passes. Shared links carry places, not preferences, and shared wheels do not offer favourites.
+
+
 ## The spin: sound and celebration
 
 - **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
@@ -71,6 +88,11 @@ Open http://localhost:3000.
 npm run test:share     # share links: round trips, tampered links, privacy snapping, link-length budget
 npm run test:filters   # rings and query builder, candidate parsing, opening hours across time zones
 npm run test:ticks     # easing curve vs CSS, tick schedule (count, slowing gaps, alignment with the wheel)
+npm run test:spin      # weighted picks (20,000 spins), landing under the pointer, ticks on uneven wheels
+npm run test:prefs     # remembered favourites, hidden places and history: validation, limits, clearing
+npm run test:attrs     # tags, cuisine and diet filters, wheel selection
+npm run test:links     # walking time, directions links, calendar file
+npm run test:weather   # weather codes and rain-soon logic
 npm run build        # production build (also catches browser-only code running on the server)
 ```
 
@@ -94,7 +116,8 @@ Import the repo on Vercel. No environment variables are needed.
 - `app/page.tsx`: the page (search, categories, wheel, options, map, sharing)
 - `components/Wheel.tsx`: SVG wheel
 - `components/PlacesMap.tsx`: Leaflet map (browser-only)
-- `lib/spin.ts`: picks the winner first, then computes the rotation that lands on it
+- `lib/spin.ts`: picks the winner first (weighted), then computes the rotation that lands on it
+- `lib/prefs.ts`, `components/PrefsPanel.tsx`: favourites, hidden places and history, kept in this browser
 - `lib/share.ts`: share-link encode, decode and validation
 - `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti
 - `lib/overpass.ts`, `lib/geo.ts`: ring query builder and nearest-first candidate parsing

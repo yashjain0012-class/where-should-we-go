@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import FiltersPanel from "@/components/FiltersPanel";
+import PrefsPanel from "@/components/PrefsPanel";
 import ResultActions from "@/components/ResultActions";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
 import {
@@ -22,7 +23,10 @@ import { describeOpenAt } from "@/lib/openAt";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
-import { pickIndex, targetRotation } from "@/lib/spin";
+import {
+  excludedIds, getPrefs, getServerPrefs, hidePlace, recordWinner, subscribePrefs, toggleFavourite, weightsFor, type Prefs,
+} from "@/lib/prefs";
+import { pickWeighted, sliceEdges, targetRotation } from "@/lib/spin";
 import { tickTimes } from "@/lib/ticks";
 import { formatWalk, walkMinutes } from "@/lib/walk";
 import type { WeatherNow } from "@/lib/weather";
@@ -88,8 +92,14 @@ function pickWheel(
   states: Record<string, OpenState>,
   filters: AttrFilters,
   preferIndoor = false,
+  prefs: Prefs = getPrefs(),
 ): Place[] {
-  return selectWheel(candidates, { openNow, states, filters, preferIndoor });
+  // What this browser remembers: hidden places and recent winners stay off the wheel, starred ones are favoured.
+  return selectWheel(candidates, {
+    openNow, states, filters, preferIndoor,
+    exclude: excludedIds(prefs, Date.now()),
+    favourites: new Set(Object.keys(prefs.favourites)),
+  });
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -136,6 +146,9 @@ export default function Home() {
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [shareFallbackUrl, setShareFallbackUrl] = useState<string | null>(null);
 
+  // Favourites, hidden places and recent winners, remembered in this browser. Empty for the server render.
+  const prefs = useSyncExternalStore(subscribePrefs, getPrefs, getServerPrefs);
+
   // Sound on/off, remembered between visits. Always "on" for the server render.
   const muted = useSyncExternalStore(subscribeMuted, getMuted, () => false);
 
@@ -157,9 +170,11 @@ export default function Home() {
 
   // What the wheel would show with no manual removals ("Reset options" restores this).
   const fetched = useMemo(
-    () => pickWheel(candidates, openNow, openStateById, filters, preferIndoor),
-    [candidates, openNow, openStateById, filters, preferIndoor],
+    () => pickWheel(candidates, openNow, openStateById, filters, preferIndoor, prefs),
+    [candidates, openNow, openStateById, filters, preferIndoor, prefs],
   );
+  // Starred places get a bigger slice.
+  const weights = useMemo(() => weightsFor(options, prefs), [options, prefs]);
   const cuisineChips = useMemo(() => cuisineOptions(candidates), [candidates]);
 
   useEffect(
@@ -420,10 +435,10 @@ export default function Home() {
     if (spinning || options.length < 2) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const ms = reduced ? SPIN_MS_REDUCED : SPIN_MS;
-    const index = pickIndex(options.length);
+    const index = pickWeighted(weights);
     const chosen = options[index];
     const from = rotationRef.current;
-    const to = targetRotation(from, index, options.length, reduced ? 2 : 5);
+    const to = targetRotation(from, index, weights, reduced ? 2 : 5);
     rotationRef.current = to;
     stopConfetti();
     setWinner(null);
@@ -432,10 +447,11 @@ export default function Home() {
     setSpinning(true);
     // Schedule the ticks now, inside the tap (browsers only allow audio after a tap), from
     // the same curve the wheel animates with so they slow down together.
-    playTicks(tickTimes(from, to, 360 / options.length, ms), ms / 1000);
+    playTicks(tickTimes(from, to, sliceEdges(weights), ms), ms / 1000);
     spinTimer.current = setTimeout(() => {
       setSpinning(false);
       setWinner(chosen);
+      if (!sharedMode) recordWinner(chosen); // shared wheels have throwaway ids, so they are not remembered
       celebrate();
     }, ms + 60);
   }
@@ -774,6 +790,7 @@ export default function Home() {
           <div className={`transition-opacity ${loading && searched ? "opacity-50" : ""}`}>
             <Wheel
               places={options}
+              weights={weights}
               rotation={rotation}
               spinning={spinning}
               durationMs={duration}
@@ -931,6 +948,29 @@ export default function Home() {
               >
                 Open in Google Maps ↗
               </a>
+              {!sharedMode && (
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={winner.id in prefs.favourites}
+                    onClick={() => toggleFavourite(winner)}
+                    className="min-h-11 rounded-full border-2 border-indigo-300 px-4 text-sm font-semibold text-white hover:bg-indigo-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  >
+                    {winner.id in prefs.favourites ? "★ Favourite" : "☆ Add to favourites"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      hidePlace(winner);
+                      setOptions((prev) => prev.filter((p) => p.id !== winner.id));
+                      setWinner(null);
+                    }}
+                    className="min-h-11 rounded-full border-2 border-indigo-300 px-4 text-sm font-semibold text-white hover:bg-indigo-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  >
+                    🚫 Never show again
+                  </button>
+                </div>
+              )}
               <ResultActions
                 key={winner.id}
                 place={winner}
@@ -960,7 +1000,7 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <ul className="flex flex-wrap gap-2">
+            <ul aria-label="Wheel options" className="flex flex-wrap gap-2">
               {options.map((p, i) => (
                 <li
                   key={p.id}
@@ -1000,6 +1040,17 @@ export default function Home() {
                         open
                       </span>
                     ))}
+                  {!sharedMode && (
+                    <button
+                      type="button"
+                      onClick={() => toggleFavourite(p)}
+                      aria-pressed={p.id in prefs.favourites}
+                      aria-label={`Favourite ${p.name}`}
+                      className="flex h-6 w-6 items-center justify-center rounded-full text-amber-500 hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-amber-600"
+                    >
+                      <span aria-hidden>{p.id in prefs.favourites ? "★" : "☆"}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => removeOption(p.id)}
@@ -1023,6 +1074,8 @@ export default function Home() {
             Reset options
           </button>
         )}
+
+        {!sharedMode && <PrefsPanel prefs={prefs} disabled={spinning} />}
 
         {(options.length > 0 || (searched && coords)) && (
           <div className="w-full">

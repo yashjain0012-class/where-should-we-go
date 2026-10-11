@@ -64,6 +64,10 @@ export interface WheelOptions {
   filters: AttrFilters;
   /** When it is raining: outdoor kinds go after indoor ones (within the same match level). */
   preferIndoor: boolean;
+  /** Places to leave out altogether (ones you hid, or that won recently). */
+  exclude?: ReadonlySet<string>;
+  /** Starred places: they get ahead of equally-ranked places, so they make it onto the wheel. */
+  favourites?: ReadonlySet<string>;
 }
 
 /**
@@ -74,11 +78,13 @@ export interface WheelOptions {
 export function selectWheel(candidates: Place[], o: WheelOptions, limit = MAX_PLACES): Place[] {
   const filtering = activeFilterCount(o.filters) > 0;
   const rows = candidates
+    .filter((p) => !o.exclude?.has(p.id))
     .filter((p) => !o.openNow || o.states[p.id] !== "closed")
     .map((p, index) => ({ p, index, match: filtering ? matchOf(p, o.filters) : ("match" as Match) }))
     .filter((r) => r.match !== "mismatch");
   const rank = (r: (typeof rows)[number]) =>
-    (r.match === "match" ? 0 : 2) + (o.preferIndoor && OUTDOOR_KINDS.has(r.p.attrs?.kind ?? "") ? 1 : 0);
+    ((r.match === "match" ? 0 : 2) + (o.preferIndoor && OUTDOOR_KINDS.has(r.p.attrs?.kind ?? "") ? 1 : 0)) * 2 +
+    (o.favourites?.has(r.p.id) ? 0 : 1);
   rows.sort((a, b) => rank(a) - rank(b) || a.index - b.index);
   return rows.slice(0, limit).map((r) => r.p);
 }

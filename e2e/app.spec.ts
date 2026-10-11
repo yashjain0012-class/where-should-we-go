@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import {
-  RAINY_DAY, expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, spinAndWait, spinButton, test,
+  RAINY_DAY, expect, mockApis, openApp, optionNames, optionUnderPointer, removeButtons, search, searchAgain, spinAndWait, spinButton, test,
 } from "./fixtures";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
 
 /** An option in the list under the wheel (the name also appears on the wheel itself). */
-const listed = (page: import("@playwright/test").Page, name: string) => page.locator("ul li .truncate", { hasText: name });
+const listed = (page: import("@playwright/test").Page, name: string) => page.locator("ul[aria-label=\"Wheel options\"] li .truncate", { hasText: name });
 
 test.describe("search and categories", () => {
   test("a search fills the wheel, the option list and the map", async ({ page, api }) => {
@@ -277,6 +277,110 @@ test.describe("cuisine and dietary filters", () => {
     await expect(page.getByText("Beans & Beyond")).toBeVisible();
     await expect(page.getByRole("button", { name: "Takeaway", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: /^Italian/ })).toHaveAttribute("aria-pressed", "false"); // no longer selected
+  });
+});
+
+test.describe("favourites, hidden places and history", () => {
+  const star = (page: import("@playwright/test").Page, name: string) => page.getByRole("button", { name: `Favourite ${name}` });
+
+  test("a starred place gets a bigger slice and the pointer maths still agrees", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const names = await optionNames(page);
+    await star(page, names[2]).click();
+    await expect(star(page, names[2])).toHaveAttribute("aria-pressed", "true");
+    // The slice is drawn twice as wide: measure its angle from the path's two arc end points.
+    const angles = await page.evaluate(() =>
+      [...document.querySelectorAll("svg[role=img] path")].map((p) => {
+        const nums = p.getAttribute("d")!.match(/-?[\d.]+/g)!.map(Number);
+        const [x1, y1, x2, y2] = [nums[2], nums[3], nums[nums.length - 2], nums[nums.length - 1]];
+        const a1 = Math.atan2(x1 - 100, 100 - y1);
+        const a2 = Math.atan2(x2 - 100, 100 - y2);
+        return ((((a2 - a1) * 180) / Math.PI) + 360) % 360;
+      }),
+    );
+    expect(angles).toHaveLength(8);
+    expect(angles[2]).toBeCloseTo(2 * angles[0], 0);
+    expect(angles[0]).toBeCloseTo(360 / 9, 0);
+    for (let i = 0; i < 3; i++) {
+      const winner = await spinAndWait(page);
+      expect(await optionUnderPointer(page)).toBe(winner);
+    }
+  });
+
+  test("favourites are remembered after a reload, and listed with a way to remove them", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const [first] = await optionNames(page);
+    await star(page, first).click();
+    await page.reload();
+    await page.waitForSelector("body[data-hydrated=true]");
+    await page.getByText("My picks and preferences").click();
+    await expect(page.getByRole("region", { name: "Favourites" }).getByText(first, { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: `Remove ${first} from favourites` }).click();
+    await expect(page.getByRole("region", { name: "Favourites" })).toHaveCount(0);
+  });
+
+  test("the result card can star a place or hide it for good", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const winner = await spinAndWait(page);
+    await page.getByRole("button", { name: "☆ Add to favourites" }).click();
+    await expect(page.getByRole("button", { name: "★ Favourite" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: /Never show again/ }).click();
+    await expect(page.locator(".result-pop")).toHaveCount(0);
+    await expect(listed(page, winner)).toHaveCount(0);
+    await expect(removeButtons(page)).toHaveCount(7);
+    // A new search does not bring it back (and a nearby place fills the wheel instead)...
+    await searchAgain(page);
+    await expect(listed(page, winner)).toHaveCount(0);
+    // ...until it is shown again.
+    await page.getByText("My picks and preferences").click();
+    await page.getByRole("button", { name: `Show again ${winner}` }).click();
+    await page.getByLabel("Skip places that won in the last").selectOption("0"); // it also won a moment ago
+    await searchAgain(page);
+    await expect(listed(page, winner)).toHaveCount(1);
+  });
+
+  test("a place that just won is skipped next time, unless you turn that off", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    const winner = await spinAndWait(page);
+    await page.getByText("My picks and preferences").click();
+    await expect(page.getByRole("region", { name: "Recent winners" }).getByText(winner)).toBeVisible();
+    await searchAgain(page);
+    await expect(listed(page, winner)).toHaveCount(0);
+    await page.getByLabel("Skip places that won in the last").selectOption("0");
+    await searchAgain(page);
+    await expect(listed(page, winner)).toHaveCount(1);
+  });
+
+  test("clear my data forgets everything", async ({ page }) => {
+    page.on("dialog", (d) => void d.accept());
+    await openApp(page);
+    await search(page);
+    const [first] = await optionNames(page);
+    await star(page, first).click();
+    await spinAndWait(page);
+    await page.getByText("My picks and preferences").click();
+    await page.getByRole("button", { name: "Clear my data" }).click();
+    await expect(page.getByRole("region", { name: "Favourites" })).toHaveCount(0);
+    await expect(page.getByText("Nothing yet.")).toBeVisible();
+    expect(await page.evaluate(() => window.localStorage.getItem("wsg-prefs"))).toBeNull();
+    await search(page);
+    await expect(star(page, first)).toHaveAttribute("aria-pressed", "false");
+  });
+
+  test("a shared wheel offers no favourites, because its places have no lasting identity", async ({ page }) => {
+    await openApp(page);
+    await search(page);
+    await page.getByRole("button", { name: /Copy/ }).click();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    await page.goto(link);
+    await page.waitForSelector("body[data-hydrated=true]");
+    await expect(removeButtons(page)).toHaveCount(8);
+    await expect(page.getByRole("button", { name: /^Favourite / })).toHaveCount(0);
+    await expect(page.getByText("My picks and preferences")).toHaveCount(0);
   });
 });
 

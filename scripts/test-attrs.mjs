@@ -127,6 +127,17 @@ test("when it rains, outdoor kinds go after indoor ones of the same match level"
 test("the limit is respected", () => {
   assert.equal(selectWheel(pool, opts(), 3).length, 3);
 });
+test("excluded places (hidden, or won recently) are skipped and the next-nearest fill in", () => {
+  assert.equal(ids(selectWheel(pool, opts({ exclude: new Set(["B", "D"]) }))), "ACEFGHIJ");
+});
+test("favourites get onto the wheel ahead of nearer places", () => {
+  assert.equal(ids(selectWheel(pool, opts({ favourites: new Set(["K", "J"]) }))), "JKABCDEF");
+  // a favourite that fails a filter is still out, and one that matches is first among the matches
+  assert.equal(ids(selectWheel(pool, opts({ filters: F({ diet: "vegetarian" }), favourites: new Set(["B", "C"]) }))), "CADEGHIJ");
+});
+test("an untagged favourite does not jump ahead of confirmed matches", () => {
+  assert.equal(ids(selectWheel(pool, opts({ filters: F({ diet: "vegetarian" }), favourites: new Set(["K"]) }), 4)), "ACDK");
+});
 
 console.log("chips and descriptions");
 test("cuisine options: most common first, ties alphabetical, capped", () => {

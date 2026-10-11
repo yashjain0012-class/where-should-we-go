@@ -62,26 +62,42 @@ export function spinRotation(start: number, end: number, elapsedMs: number, dura
 
 /**
  * Seconds after the spin starts at which each slice boundary passes the (fixed) pointer.
- * The wheel turns clockwise from `startRotation` to `endRotation`; boundaries sit every
- * `sliceDeg` degrees. Ticks closer together than `minGapMs` are dropped, because at the
- * very fast start they would blur into one buzz.
+ * The wheel turns clockwise from `startRotation` to `endRotation`. `slices` is either the
+ * angle of equal slices, or the slice edges of an uneven wheel (degrees clockwise from the
+ * top, as lib/spin.ts `sliceEdges` gives them). Ticks closer together than `minGapMs` are
+ * dropped, because at the very fast start they would blur into one buzz.
  */
 export function tickTimes(
   startRotation: number,
   endRotation: number,
-  sliceDeg: number,
+  slices: number | readonly number[],
   durationMs: number,
   minGapMs = 25,
 ): number[] {
   const total = endRotation - startRotation;
-  if (!(total > 0) || !(sliceDeg > 0) || !(durationMs > 0)) return [];
+  if (!(total > 0) || !(durationMs > 0) || (typeof slices === "number" && !(slices > 0))) return [];
+
+  // The rotations in (start, end] at which a slice edge is under the pointer.
+  const crossings: number[] = [];
+  if (typeof slices === "number") {
+    const first = Math.floor(startRotation / slices) + 1;
+    const last = Math.floor(endRotation / slices);
+    for (let k = first; k <= last; k++) crossings.push(k * slices);
+  } else {
+    // An edge at angle e (clockwise from the top) is under the pointer when the rotation is -e, modulo a turn.
+    const edges = slices.slice(0, -1); // the final edge, 360, is the same as the first
+    for (let turn = Math.floor(startRotation / 360); turn <= Math.floor(endRotation / 360) + 1; turn++) {
+      for (const e of edges) {
+        const at = 360 * turn - e;
+        if (at > startRotation && at <= endRotation) crossings.push(at);
+      }
+    }
+    crossings.sort((a, b) => a - b);
+  }
 
   const times: number[] = [];
-  // Boundaries are the multiples of sliceDeg that fall in (start, end].
-  const first = Math.floor(startRotation / sliceDeg) + 1;
-  const last = Math.floor(endRotation / sliceDeg);
-  for (let k = first; k <= last; k++) {
-    const progress = (k * sliceDeg - startRotation) / total; // fraction of the movement
+  for (const crossing of crossings) {
+    const progress = (crossing - startRotation) / total; // fraction of the movement
     // Invert the easing: which moment has this progress? (The curve only ever increases.)
     let lo = 0;
     let hi = 1;
