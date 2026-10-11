@@ -57,6 +57,14 @@ Two helpers sit under the Spin button (and work on any wheel, places or your own
 - **🙈 Take turns vetoing** (3 or more options): pass the phone around; each of 2 to 6 people removes the one option they want least, or passes. It never vetoes below two options, and Spin is disabled until it ends.
 - **🏆 Head-to-head instead** (2 or more options): a knockout tournament, two options at a time, you pick, until one is left. Any number of options works (2 to 16): extra slots are byes, so nobody votes more than they need to, and exactly *n − 1* choices decide it. The wheel then turns (without spinning) to show the same winner. The pure logic is in `lib/bracket.ts` with its own tests.
 
+## Install it, and use it offline
+
+The app is an installable PWA: **Add to Home Screen** (iPhone) or **Install** (Chrome, Edge, Android) gives it its own icon and a full-screen window. There is deliberately no custom "Install" button, because the install prompt is not available in every browser.
+
+- `app/manifest.ts` is the web app manifest. The icons are drawn in code (`lib/iconArt.tsx`, rendered by `next/og` `ImageResponse` as PNG at `/pwa-icon/192`, `/pwa-icon/512` and a padded `/pwa-icon/maskable`; `app/icon.tsx` and `app/apple-icon.tsx` use the same artwork), so there are no image files to maintain.
+- `public/sw.js` is a small service worker, registered in production only: the page is network-first (a new deploy shows straight away) with the last copy as the offline fallback; hashed build files are cache-first; `/api/*` and other origins (map tiles, weather) are never stored.
+- Offline, the app opens, says so, and offers **Open my last wheel**. The last wheel is kept in this browser as the same share link a friend would get (`wsg-last-wheel`), and **Clear my data** deletes it. Spinning the wheel and your own lists work offline; searching and the map need a connection, and if the map's code never downloaded, a short message replaces it instead of an error.
+
 ## The spin: sound and celebration
 
 - **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
@@ -134,6 +142,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/spin.ts`: picks the winner first (weighted), then computes the rotation that lands on it
 - `lib/prefs.ts`, `components/PrefsPanel.tsx`: favourites, hidden places and history, kept in this browser
 - `lib/share.ts`: share-link encode, decode and validation
+- `app/manifest.ts`, `public/sw.js`, `lib/iconArt.tsx`, `lib/lastWheel.ts`, `components/OfflineBanner.tsx`: installable app and offline support
 - `lib/bracket.ts`, `components/Duel.tsx`, `components/VetoRound.tsx`: head-to-head tournament and pass-the-phone vetoes
 - `lib/custom.ts`, `components/CustomEditor.tsx`: the "My own list" mode and its share links
 - `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import dynamic from "next/dynamic";
 import CustomEditor from "@/components/CustomEditor";
 import Duel from "@/components/Duel";
+import ErrorBoundary from "@/components/ErrorBoundary";
+import OfflineBanner from "@/components/OfflineBanner";
 import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
 import ResultActions from "@/components/ResultActions";
@@ -26,6 +28,7 @@ import {
 } from "@/lib/filters";
 import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
 import { describeOpenAt } from "@/lib/openAt";
+import { saveLastWheel } from "@/lib/lastWheel";
 import { mapsUrl } from "@/lib/maps";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
@@ -149,6 +152,7 @@ export default function Home() {
   const [customNotes, setCustomNotes] = useState<string[]>([]);
   // Group helpers that replace the spin for a moment: pass-the-phone vetoes, or head-to-head choices.
   const [helper, setHelper] = useState<"none" | "veto" | "duel">("none");
+  const lastSavedWheel = useRef<string | null>(null);
   const placesStash = useRef<Place[]>([]); // the places wheel, kept while the custom list is showing
   const [sharedMode, setSharedMode] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -288,6 +292,21 @@ export default function Home() {
     window.addEventListener("hashchange", openSharedLink);
     return () => window.removeEventListener("hashchange", openSharedLink);
   }, []);
+
+  // Keep the wheel that is on screen as a share link, so it can be opened again with no connection.
+  useEffect(() => {
+    if (options.length < 2 || loading) return;
+    const hash = customMode
+      ? encodeCustom(options.map((o, i) => ({ name: o.name, weight: weights[i] })))
+      : coords
+        ? encodeShare({ center: { lat: coords.lat, lon: coords.lon }, label: coords.label, category, places: options })
+        : null;
+    // Only when the wheel really changed: "Clear my data" must not be undone by a re-render.
+    if (hash && hash !== lastSavedWheel.current) {
+      lastSavedWheel.current = hash;
+      saveLastWheel(hash);
+    }
+  }, [options, weights, customMode, coords, category, loading]);
 
   // Lets end-to-end tests wait until React has taken over: a click before that would submit the form natively.
   useEffect(() => {
@@ -703,6 +722,8 @@ export default function Home() {
           Pick a spot, pick a vibe, and let the wheel settle the argument.
         </p>
       </header>
+
+      <OfflineBanner hasWheel={options.length > 0} onOpenLast={(hash) => (window.location.hash = hash)} />
 
       {linkProblem && (
         <div
@@ -1260,12 +1281,20 @@ export default function Home() {
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-indigo-900">
               Map
             </h2>
-            <PlacesMap
-              places={options}
-              winnerId={winner?.id ?? null}
-              center={mapCenter}
-              hoursUnknown={unknownIds}
-            />
+            <ErrorBoundary
+              fallback={
+                <p role="status" className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-700">
+                  The map couldn&apos;t load. It needs a connection the first time. The wheel and options above still work.
+                </p>
+              }
+            >
+              <PlacesMap
+                places={options}
+                winnerId={winner?.id ?? null}
+                center={mapCenter}
+                hoursUnknown={unknownIds}
+              />
+            </ErrorBoundary>
             <p className="mt-2 text-xs text-indigo-900/70">
               Tap a pin for its name and a Google Maps link. Pin colours and numbers match the wheel.
             </p>

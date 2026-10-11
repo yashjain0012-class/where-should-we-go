@@ -545,6 +545,59 @@ test.describe("group decisions", () => {
   });
 });
 
+test.describe("installable app and offline", () => {
+  test("the manifest and its icons are valid", async ({ request }) => {
+    const res = await request.get("/manifest.webmanifest");
+    expect(res.ok()).toBe(true);
+    const manifest = await res.json();
+    expect(manifest).toMatchObject({ name: "Where should we go?", display: "standalone", start_url: "/" });
+    const purposes = manifest.icons.map((i: { purpose: string }) => i.purpose);
+    expect(purposes).toEqual(["any", "any", "maskable"]);
+    for (const icon of manifest.icons as { src: string; type: string }[]) {
+      const png = await request.get(icon.src);
+      expect(png.ok()).toBe(true);
+      expect(png.headers()["content-type"]).toBe(icon.type);
+      expect((await png.body()).subarray(1, 4).toString()).toBe("PNG");
+    }
+    expect((await request.get("/pwa-icon/nope")).status()).toBe(404);
+    expect((await request.get("/apple-icon")).ok()).toBe(true);
+  });
+
+  test("a service worker is installed, and offline the app opens with an offer to restore the last wheel", async ({ page, context }) => {
+    await openApp(page);
+    await search(page); // the wheel is remembered as a share link
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await page.waitForSelector("body[data-hydrated=true]");
+    await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+
+    await context.setOffline(true);
+    await page.goto("/");
+    await page.waitForSelector("body[data-hydrated=true]");
+    await expect(page.getByRole("heading", { name: /Where should we go/ })).toBeVisible();
+    await expect(page.getByText(/You're offline/)).toBeVisible();
+    await page.getByRole("button", { name: "Open my last wheel" }).click();
+    await expect(removeButtons(page)).toHaveCount(8);
+    await expect(page.getByText(/You're offline/)).toBeVisible();
+    const winner = await spinAndWait(page); // spinning needs no network
+    expect(await optionNames(page)).toContain(winner);
+
+    await context.setOffline(false);
+    await expect(page.getByText(/You're offline/)).toHaveCount(0);
+  });
+
+  test("clearing my data also forgets the saved last wheel", async ({ page }) => {
+    page.on("dialog", (d) => void d.accept());
+    await openApp(page);
+    await search(page);
+    expect(await page.evaluate(() => window.localStorage.getItem("wsg-last-wheel"))).toMatch(/^#s=1\./);
+    await spinAndWait(page); // gives "clear my data" something to clear
+    await page.getByText("My picks and preferences").click();
+    await page.getByRole("button", { name: "Clear my data" }).click();
+    expect(await page.evaluate(() => window.localStorage.getItem("wsg-last-wheel"))).toBeNull();
+  });
+});
+
 test.describe("sharing", () => {
   test("a copied link opens the same wheel in a fresh page without searching again", async ({ page, context }) => {
     await openApp(page);

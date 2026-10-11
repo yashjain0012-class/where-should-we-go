@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import PwaRegister from "@/components/PwaRegister";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -15,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Where should we go?",
   description: "Spin the wheel to decide where to eat, drink or hang out nearby.",
+  appleWebApp: { capable: true, title: "Where to?", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1e1b4b",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -23,7 +29,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <PwaRegister />
+      </body>
     </html>
   );
 }

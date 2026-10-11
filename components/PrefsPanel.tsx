@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { forgetLastWheel } from "@/lib/lastWheel";
 import {
   SKIP_DAY_CHOICES, clearPrefs, hasAnyData, setSkipDays, toggleFavourite, unhidePlace, type Prefs,
 } from "@/lib/prefs";
@@ -103,7 +104,10 @@ export default function PrefsPanel({ prefs, disabled }: Props) {
           type="button"
           disabled={disabled || !hasAnyData(prefs)}
           onClick={() => {
-            if (window.confirm("Forget your favourites, hidden places and history in this browser?")) clearPrefs();
+            if (window.confirm("Forget your favourites, hidden places and history in this browser?")) {
+              clearPrefs();
+              forgetLastWheel();
+            }
           }}
           className="min-h-11 self-start rounded-xl border-2 border-red-700 bg-white px-4 font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
