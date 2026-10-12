@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Place } from "@/lib/types";
+import { useT } from "@/lib/useT";
 
 interface Props {
   options: Place[];
@@ -15,17 +16,18 @@ const secondary =
 
 /** Pass the phone around: each person in turn removes one option they cannot stand (or passes), then you spin. */
 export default function VetoRound({ options, onRemove, onClose }: Props) {
+  const t = useT();
   const [players, setPlayers] = useState(3);
   const [turn, setTurn] = useState<number | null>(null); // null = choosing how many people
 
   if (turn === null) {
     return (
-      <section aria-label="Take turns vetoing" className="w-full max-w-md rounded-2xl bg-indigo-50 p-4">
+      <section aria-label={t("Take turns vetoing")} className="w-full max-w-md rounded-2xl bg-indigo-50 p-4">
         <p className="text-sm text-indigo-950">
-          Pass the phone around. Each person removes <b>one</b> option they really don&apos;t want, then you spin what&apos;s left.
+          {t("Pass the phone around. Each person removes one option they really don't want, then you spin what's left.")}
         </p>
         <label className="mt-3 flex flex-wrap items-center gap-2 text-sm font-semibold text-indigo-950">
-          How many people?
+          {t("How many people?")}
           <select
             value={players}
             onChange={(e) => setPlayers(Number(e.target.value))}
@@ -44,10 +46,10 @@ export default function VetoRound({ options, onRemove, onClose }: Props) {
             onClick={() => setTurn(0)}
             className="min-h-11 rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
-            Start
+            {t("Start")}
           </button>
           <button type="button" onClick={onClose} className={secondary}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       </section>
@@ -57,25 +59,31 @@ export default function VetoRound({ options, onRemove, onClose }: Props) {
   // Never veto the wheel down below two options.
   const finished = turn >= players || options.length <= 2;
   if (finished) {
+    const downToTwo = options.length <= 2 && turn < players;
     return (
-      <section aria-label="Take turns vetoing" role="status" className="w-full max-w-md rounded-2xl bg-indigo-50 p-4 text-center">
+      <section aria-label={t("Take turns vetoing")} role="status" className="w-full max-w-md rounded-2xl bg-indigo-50 p-4 text-center">
         <p className="font-semibold text-indigo-950">
-          {options.length <= 2 && turn < players ? "Down to two: " : "Everyone has had a say: "}
-          {options.length} {options.length === 1 ? "option" : "options"} left. Time to spin!
+          {downToTwo
+            ? options.length === 1
+              ? t("Down to two: 1 option left. Time to spin!")
+              : t("Down to two: {n} options left. Time to spin!", { n: options.length })
+            : options.length === 1
+              ? t("Everyone has had a say: 1 option left. Time to spin!")
+              : t("Everyone has had a say: {n} options left. Time to spin!", { n: options.length })}
         </p>
         <button type="button" onClick={onClose} className={`${secondary} mt-3`}>
-          Done
+          {t("Done")}
         </button>
       </section>
     );
   }
 
   return (
-    <section aria-label="Take turns vetoing" className="w-full max-w-md rounded-2xl bg-indigo-50 p-4">
+    <section aria-label={t("Take turns vetoing")} className="w-full max-w-md rounded-2xl bg-indigo-50 p-4">
       <p aria-live="polite" className="text-center text-xs font-bold uppercase tracking-widest text-indigo-900">
-        Person {turn + 1} of {players}
+        {t("Person {n} of {total}", { n: turn + 1, total: players })}
       </p>
-      <p className="mt-1 text-center text-sm text-indigo-950">Remove the one you want least.</p>
+      <p className="mt-1 text-center text-sm text-indigo-950">{t("Remove the one you want least.")}</p>
       <ul className="mt-3 flex flex-col gap-2">
         {options.map((o) => (
           <li key={o.id}>
@@ -87,7 +95,7 @@ export default function VetoRound({ options, onRemove, onClose }: Props) {
               }}
               className="min-h-11 w-full rounded-xl bg-white px-4 text-left font-semibold text-indigo-950 shadow-sm ring-1 ring-indigo-200 hover:bg-red-50 hover:ring-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
             >
-              <span className="sr-only">Veto </span>
+              <span className="sr-only">{t("Veto")} </span>
               {o.name}
             </button>
           </li>
@@ -95,10 +103,10 @@ export default function VetoRound({ options, onRemove, onClose }: Props) {
       </ul>
       <div className="mt-3 flex justify-between gap-2">
         <button type="button" onClick={() => setTurn(turn + 1)} className={secondary}>
-          Pass
+          {t("Pass")}
         </button>
         <button type="button" onClick={onClose} className="min-h-11 px-3 text-sm font-semibold text-indigo-700 underline">
-          Stop
+          {t("Stop")}
         </button>
       </div>
     </section>

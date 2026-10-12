@@ -132,3 +132,48 @@ test("the checker itself works: it flags a button with no name and pale text", a
   expect(ids).toContain("button-name");
   expect(ids).toContain("color-contrast");
 });
+
+test.describe("Hindi", () => {
+  test.use({ locale: "hi-IN" });
+
+  test("the page follows a Hindi device, switches back, and remembers the choice", async ({ page }) => {
+    await openApp(page);
+    await expect(page.locator("html")).toHaveAttribute("lang", "hi");
+    await expect(page.getByRole("heading", { name: /हम कहाँ चलें/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "खोजें", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /Switch to English/ }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.getByRole("heading", { name: /Where should we go/ })).toBeVisible();
+    await page.reload();
+    await page.waitForSelector("body[data-hydrated=true]");
+    await expect(page.getByRole("heading", { name: /Where should we go/ })).toBeVisible(); // the choice beat the device default
+  });
+
+  test("a whole search, spin and result work in Hindi, and pass the accessibility checks", async ({ page }) => {
+    await openApp(page);
+    await page.getByLabel("मोहल्ला या शहर").fill("Shoreditch, London");
+    await page.getByRole("button", { name: "खोजें", exact: true }).click();
+    await expect(page.getByRole("button", { name: /^[^🙈]* हटाएँ$/ })).toHaveCount(8);
+    await expect(page.getByText("पास में:")).toBeVisible();
+    await scan(page, "hindi results");
+    await page.getByRole("button", { name: "घुमाएँ!" }).click();
+    const card = page.locator(".result-pop");
+    await expect(card).toBeVisible({ timeout: 9000 });
+    await expect(card).toContainText("चलिए चलते हैं");
+    await expect(card.getByRole("button", { name: /तस्वीर के रूप में शेयर करें/ })).toBeVisible();
+    await scan(page, "hindi result card");
+    await page.getByText("और फ़िल्टर").click();
+    await scan(page, "hindi filters");
+  });
+
+  test("messages built from parts read as Hindi sentences", async ({ page }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /मेरी अपनी सूची/ }).click();
+    await page.getByLabel("आपके विकल्प").fill("A\nA\nB x9\nC");
+    await page.getByRole("button", { name: /^पहिये पर रखें/ }).click();
+    await expect(page.getByText("1 दोहराया हुआ विकल्प छोड़ दिया गया।")).toBeVisible();
+    await expect(page.getByText("वज़न 5 तक जा सकता है।")).toBeVisible();
+    await page.getByRole("button", { name: /आमने-सामने मुक़ाबला/ }).click();
+    await expect(page.getByText(/क्वार्टर-फ़ाइनल|सेमी-फ़ाइनल|फ़ाइनल/)).toBeVisible();
+  });
+});

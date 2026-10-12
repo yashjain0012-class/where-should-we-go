@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RoomView } from "@/lib/useRoom";
 import { roomHash } from "@/lib/room";
+import { useT } from "@/lib/useT";
 
 interface Props {
   room: RoomView;
@@ -18,48 +19,50 @@ const secondary =
 
 /** The live room's status: link and people for the host; "joining", "connected" and problems for a guest. */
 export default function RoomPanel({ room, canNativeShare, onLeave, onKeep, onRetry }: Props) {
+  const t = useT();
   const [note, setNote] = useState<string | null>(null);
+  const people = (n: number) => (n === 1 ? t("1 person here") : t("{n} people here", { n }));
 
   if (room.role === "host") {
     const link = room.code ? `${window.location.origin}${window.location.pathname}${roomHash(room.code)}` : "";
     const copy = async () => {
       try {
         await navigator.clipboard.writeText(link);
-        setNote("Room link copied ✓");
+        setNote(t("Room link copied ✓"));
       } catch {
-        setNote("Couldn't copy automatically. Select the link and copy it.");
+        setNote(t("Couldn't copy automatically. Select the link and copy it."));
       }
     };
     const share = async () => {
       try {
-        await navigator.share({ title: "Join my wheel", text: "Join my room and help us pick:", url: link });
+        await navigator.share({ title: t("Join my wheel"), text: t("Join my room and help us pick:"), url: link });
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) await copy();
       }
     };
     return (
-      <section aria-label="Live room" className="flex flex-col gap-3 rounded-3xl bg-indigo-950 p-4 text-white shadow-lg sm:p-6">
+      <section aria-label={t("Live room")} className="flex flex-col gap-3 rounded-3xl bg-indigo-950 p-4 text-white shadow-lg sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-indigo-200">👥 Live room</h2>
+          <h2 className="text-sm font-bold uppercase tracking-widest text-indigo-200">👥 {t("Live room")}</h2>
           {room.status === "live" && (
             <p role="status" className="text-sm font-semibold">
-              {room.people} {room.people === 1 ? "person" : "people"} here
+              {people(room.people)}
             </p>
           )}
         </div>
 
-        {room.status === "starting" && <p role="status">Opening the room…</p>}
+        {room.status === "starting" && <p role="status">{t("Opening the room…")}</p>}
         {room.status === "error" && (
           <>
             <p role="alert" className="text-amber-200">
-              {room.error}
+              {room.error ? t(room.error) : ""}
             </p>
             <div className="flex gap-2">
               <button type="button" className={primary} onClick={onRetry}>
-                Try again
+                {t("Try again")}
               </button>
               <button type="button" className="min-h-11 px-3 font-semibold text-indigo-200 underline" onClick={onLeave}>
-                Close
+                {t("Close")}
               </button>
             </div>
           </>
@@ -67,27 +70,26 @@ export default function RoomPanel({ room, canNativeShare, onLeave, onKeep, onRet
         {room.status === "live" && (
           <>
             <p className="text-sm text-indigo-100">
-              Send this link. Friends see this wheel as it changes, can veto one option each, and watch your spin land on the
-              same result. Nothing is stored: the room ends when you leave.
+              {t("Send this link. Friends see this wheel as it changes, can veto one option each, and watch your spin land on the same result. Nothing is stored: the room ends when you leave.")}
             </p>
             <input
               readOnly
               value={link}
-              aria-label="Room link"
+              aria-label={t("Room link")}
               onFocus={(e) => e.currentTarget.select()}
               className="w-full rounded-xl bg-white px-3 py-2 text-sm text-indigo-950"
             />
             <div className="flex flex-wrap gap-2">
               {canNativeShare && (
                 <button type="button" className={primary} onClick={() => void share()}>
-                  Share room link
+                  {t("Share room link")}
                 </button>
               )}
               <button type="button" className={canNativeShare ? secondary : primary} onClick={() => void copy()}>
-                Copy room link
+                {t("Copy room link")}
               </button>
               <button type="button" className="min-h-11 px-3 font-semibold text-indigo-200 underline" onClick={onLeave}>
-                End room
+                {t("End room")}
               </button>
             </div>
             <p aria-live="polite" className={note ? "text-sm text-indigo-100" : "sr-only"}>
@@ -101,27 +103,27 @@ export default function RoomPanel({ room, canNativeShare, onLeave, onKeep, onRet
 
   // guest
   return (
-    <section aria-label="Live room" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-indigo-950 px-4 py-3 text-white shadow-lg">
-      {room.status === "joining" && <p role="status">👥 Joining the room…</p>}
+    <section aria-label={t("Live room")} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-indigo-950 px-4 py-3 text-white shadow-lg">
+      {room.status === "joining" && <p role="status">👥 {t("Joining the room…")}</p>}
       {room.status === "live" && (
         <>
           <p role="status" className="text-sm">
-            <span className="font-bold">👥 Live room</span> · {room.people} {room.people === 1 ? "person" : "people"} here · the host spins
+            <span className="font-bold">👥 {t("Live room")}</span> · {people(room.people)} · {t("the host spins")}
           </p>
           <button type="button" className="min-h-11 px-3 text-sm font-semibold text-indigo-200 underline" onClick={onLeave}>
-            Leave
+            {t("Leave")}
           </button>
         </>
       )}
       {room.status === "ended" && (
         <>
-          <p role="status">The host ended the room.</p>
+          <p role="status">{t("The host ended the room.")}</p>
           <div className="flex gap-2">
             <button type="button" className={secondary} onClick={onKeep}>
-              Keep this wheel
+              {t("Keep this wheel")}
             </button>
             <button type="button" className="min-h-11 px-3 text-sm font-semibold text-indigo-200 underline" onClick={onLeave}>
-              Close
+              {t("Close")}
             </button>
           </div>
         </>
@@ -129,10 +131,10 @@ export default function RoomPanel({ room, canNativeShare, onLeave, onKeep, onRet
       {room.status === "error" && (
         <>
           <p role="alert" className="text-amber-200">
-            {room.error}
+            {room.error ? t(room.error) : ""}
           </p>
           <button type="button" className={secondary} onClick={onLeave}>
-            Close
+            {t("Close")}
           </button>
         </>
       )}

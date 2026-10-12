@@ -1,4 +1,5 @@
 /** What the weather means for choosing where to go. Built from Open-Meteo's forecast answer (free, no key). */
+import { msg } from "./i18n";
 export interface WeatherNow {
   tempC: number;
   /** WMO weather code, see https://open-meteo.com/en/docs */
@@ -19,16 +20,16 @@ interface Described {
 
 /** WMO codes grouped the way people talk about them. */
 export function describeCode(code: number): Described {
-  if (code === 0) return { label: "Clear", emoji: "☀️" };
-  if (code === 1 || code === 2) return { label: "Mostly clear", emoji: "🌤️" };
-  if (code === 3) return { label: "Cloudy", emoji: "☁️" };
-  if (code === 45 || code === 48) return { label: "Fog", emoji: "🌫️" };
-  if (code >= 51 && code <= 57) return { label: "Drizzle", emoji: "🌦️" };
-  if (code >= 61 && code <= 67) return { label: "Rain", emoji: "🌧️" };
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { label: "Snow", emoji: "🌨️" };
-  if (code >= 80 && code <= 82) return { label: "Showers", emoji: "🌦️" };
-  if (code >= 95 && code <= 99) return { label: "Thunderstorm", emoji: "⛈️" };
-  return { label: "Unsettled", emoji: "🌥️" };
+  if (code === 0) return { label: msg("Clear"), emoji: "☀️" };
+  if (code === 1 || code === 2) return { label: msg("Mostly clear"), emoji: "🌤️" };
+  if (code === 3) return { label: msg("Cloudy"), emoji: "☁️" };
+  if (code === 45 || code === 48) return { label: msg("Fog"), emoji: "🌫️" };
+  if (code >= 51 && code <= 57) return { label: msg("Drizzle"), emoji: "🌦️" };
+  if (code >= 61 && code <= 67) return { label: msg("Rain"), emoji: "🌧️" };
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { label: msg("Snow"), emoji: "🌨️" };
+  if (code >= 80 && code <= 82) return { label: msg("Showers"), emoji: "🌦️" };
+  if (code >= 95 && code <= 99) return { label: msg("Thunderstorm"), emoji: "⛈️" };
+  return { label: msg("Unsettled"), emoji: "🌥️" };
 }
 
 /** Rain, drizzle, showers, snow or thunder: weather you would rather not be outdoors in. */
@@ -63,7 +64,7 @@ export function parseForecast(json: unknown): WeatherNow | null {
   return {
     tempC: Math.round(temp),
     code,
-    label: rainSoon ? "Rain likely soon" : label,
+    label: rainSoon ? msg("Rain likely soon") : label,
     emoji: rainSoon ? "🌦️" : emoji,
     raining,
     rainSoon,

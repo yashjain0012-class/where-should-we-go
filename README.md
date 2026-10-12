@@ -58,6 +58,12 @@ Custom lists share as `#c=1.<checksum>.<payload>`, where the payload is base64ur
 - **Dark mode:** the **Auto / Light / Dark** button follows the device by default and remembers a choice. A tiny script in the page head sets the theme before the first paint, so there is no flash. Rather than a `dark:` variant on every element, `scripts/gen-dark-theme.mjs` generates `app/dark-theme.css`, which mirrors each Tailwind colour scale used (50 to 950, 100 to 900, ...) and swaps white for a deep indigo, so every pairing in the design keeps its contrast; the generated file is checked into the repo and the dark theme passes the same axe checks.
 - **Units:** the **km / mi** button changes how distances are written (the slider, the labels and the messages). The default follows the device's region (miles in the US, UK, Liberia and Myanmar), a choice is remembered, and searches are always in metres underneath.
 
+## English and Hindi
+
+The **English / हिन्दी** button switches the whole interface (the default follows the device: a Hindi device starts in Hindi), the choice is remembered, and `<html lang>` follows it. There is no i18n library: the English text in the code is the key (`t("Search")`), `lib/hi.ts` is the Hindi dictionary, and anything without an entry shows in English rather than blank. Texts with values use placeholders (`t("{n} min walk", { n })`), and the few messages kept in state are marked `msg("...")` and translated when shown. Messages from our own API that contain a value (a place, a distance) are matched back to templates in `lib/apiMessages.ts`.
+
+`npm run test:i18n` keeps the dictionary honest: it scans the source for every `t("...")` and `msg("...")`, and fails if any text has no Hindi entry, an entry is no longer used, a translation changes the `{placeholders}`, a translation is not actually Devanagari, or a text with placeholders is never given values. A Hindi end-to-end run searches, spins and passes the same accessibility checks. Place names, cuisines and other OpenStreetMap data are shown as they are in the data.
+
 ## Live room
 
 **👥 Live room** (under the Spin button) turns a wheel into a shared one, with no accounts and nothing stored:
@@ -152,6 +158,7 @@ npm run test:card      # text wrapping for the result picture, safe file names
 npm run test:motion    # shake detection (rest, one bump, real shakes, lockout) and which ticks are felt
 npm run test:room      # live-room protocol: validation of every message, room codes, veto rules
 npm run test:units     # km and mi formatting, default unit by region
+npm run test:i18n      # Hindi dictionary: every text translated, none unused, placeholders intact
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -183,6 +190,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/share.ts`: share-link encode, decode and validation
 - `app/manifest.ts`, `public/sw.js`, `lib/iconArt.tsx`, `lib/lastWheel.ts`, `components/OfflineBanner.tsx`: installable app and offline support
 - `lib/resultCard.ts`, `lib/textWrap.ts`, `components/ShareCardButton.tsx`: the shareable result picture
+- `lib/i18n.ts`, `lib/hi.ts`, `lib/useT.ts`, `lib/apiMessages.ts`, `components/LangToggle.tsx`: English and Hindi
 - `lib/theme.ts`, `scripts/gen-dark-theme.mjs`, `app/dark-theme.css`, `lib/units.ts`: dark mode and units
 - `lib/room.ts`, `lib/roomPeer.ts`, `lib/useRoom.ts`, `components/RoomPanel.tsx`, `app/api/peer-config`: live rooms
 - `lib/motion.ts`: vibration, shake detection and the 📳 switch

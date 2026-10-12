@@ -1,3 +1,4 @@
+import { english, type Translate } from "./i18n";
 import { checksum, clean, fromBase64Url, toBase64Url } from "./share";
 import type { Place } from "./types";
 
@@ -23,7 +24,7 @@ export interface ParsedCustom {
 
 const WEIGHT_SUFFIX = /\s*[x×*]\s*(\d{1,3})\s*$/i;
 
-export function parseCustomText(text: string): ParsedCustom {
+export function parseCustomText(text: string, t: Translate = english): ParsedCustom {
   let lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   // "pizza, tacos, sushi" on one line is a list too.
   if (lines.length === 1 && lines[0].includes(",")) lines = lines[0].split(",").map((l) => l.trim()).filter(Boolean);
@@ -68,10 +69,10 @@ export function parseCustomText(text: string): ParsedCustom {
     items.push({ name, weight });
   }
 
-  if (overflow) notes.push(`Only the first ${MAX_ITEMS} fit on the wheel; ${overflow} left off.`);
-  if (duplicates) notes.push(`${duplicates} repeated ${duplicates === 1 ? "option was" : "options were"} left out.`);
-  if (cut) notes.push(`${cut} long ${cut === 1 ? "name was" : "names were"} shortened to ${MAX_NAME} characters.`);
-  if (clamped) notes.push(`Weights go up to ${MAX_WEIGHT}.`);
+  if (overflow) notes.push(t("Only the first {max} fit on the wheel; {n} left off.", { max: MAX_ITEMS, n: overflow }));
+  if (duplicates) notes.push(duplicates === 1 ? t("1 repeated option was left out.") : t("{n} repeated options were left out.", { n: duplicates }));
+  if (cut) notes.push(cut === 1 ? t("1 long name was shortened to {max} characters.", { max: MAX_NAME }) : t("{n} long names were shortened to {max} characters.", { n: cut, max: MAX_NAME }));
+  if (clamped) notes.push(t("Weights go up to {max}.", { max: MAX_WEIGHT }));
   return { items, notes };
 }
 

@@ -1,4 +1,5 @@
 import { MAX_PLACES } from "./categories";
+import { english, type Translate } from "./i18n";
 import type { OpenState, Place, PlaceAttrs } from "./types";
 
 /**
@@ -105,18 +106,18 @@ export function prettyCuisine(c: string): string {
 }
 
 /** Short facts for a result card or popup, e.g. ["Italian", "Vegetarian options", "Outdoor seating"]. */
-export function describeAttrs(a: PlaceAttrs | undefined): string[] {
+export function describeAttrs(a: PlaceAttrs | undefined, t: Translate = english): string[] {
   if (!a) return [];
   const out: string[] = [];
   if (a.cuisine?.length) out.push(a.cuisine.map(prettyCuisine).join(", "));
-  if (a.vegan === "only") out.push("Vegan only");
-  else if (a.vegan === "yes") out.push("Vegan options");
-  if (a.vegetarian === "only") out.push("Vegetarian only");
-  else if (a.vegetarian === "yes" && a.vegan !== "yes" && a.vegan !== "only") out.push("Vegetarian options");
-  if (a.outdoorSeating) out.push("Outdoor seating");
-  if (a.wheelchair === "yes") out.push("Wheelchair accessible");
-  else if (a.wheelchair === "limited") out.push("Limited wheelchair access");
-  if (a.takeaway === "only") out.push("Takeaway only");
-  else if (a.takeaway === "yes") out.push("Takeaway");
+  if (a.vegan === "only") out.push(t("Vegan only"));
+  else if (a.vegan === "yes") out.push(t("Vegan options"));
+  if (a.vegetarian === "only") out.push(t("Vegetarian only"));
+  else if (a.vegetarian === "yes" && a.vegan !== "yes" && a.vegan !== "only") out.push(t("Vegetarian options"));
+  if (a.outdoorSeating) out.push(t("Outdoor seating"));
+  if (a.wheelchair === "yes") out.push(t("Wheelchair accessible"));
+  else if (a.wheelchair === "limited") out.push(t("Limited wheelchair access"));
+  if (a.takeaway === "only") out.push(t("Takeaway only"));
+  else if (a.takeaway === "yes") out.push(t("Takeaway"));
   return out;
 }

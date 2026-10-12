@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { champion, createBracket, nextMatch, pick, roundName, votesLeft } from "@/lib/bracket";
 import type { Place } from "@/lib/types";
+import { useT } from "@/lib/useT";
 
 interface Props {
   options: Place[];
@@ -13,6 +14,7 @@ const choiceClass =
 
 /** Head-to-head elimination: two options at a time, you pick, until one is left. An alternative to the wheel. */
 export default function Duel({ options, onChampion, onCancel }: Props) {
+  const t = useT();
   const [bracket, setBracket] = useState(() => createBracket(options.map((o) => o.id)));
   const byId = new Map(options.map((o) => [o.id, o]));
   const match = nextMatch(bracket);
@@ -27,19 +29,22 @@ export default function Duel({ options, onChampion, onCancel }: Props) {
   const a = byId.get(match.a)!;
   const b = byId.get(match.b)!;
   const left = votesLeft(bracket);
+  const round = roundName(bracket, match.round);
+  const roundLabel =
+    round === "Final" ? t("Final") : round === "Semi-final" ? t("Semi-final") : round === "Quarter-final" ? t("Quarter-final") : t("Round {n}", { n: match.round + 1 });
 
   return (
-    <section aria-label="Head-to-head" className="w-full max-w-md rounded-2xl bg-indigo-50 p-4 text-center">
+    <section aria-label={t("Head-to-head")} className="w-full max-w-md rounded-2xl bg-indigo-50 p-4 text-center">
       <p className="text-xs font-bold uppercase tracking-widest text-indigo-900">
-        {roundName(bracket, match.round)} · {left} {left === 1 ? "choice" : "choices"} to go
+        {roundLabel} · {left === 1 ? t("1 choice to go") : t("{n} choices to go", { n: left })}
       </p>
-      <p className="mt-1 text-sm text-indigo-900">Which would you rather?</p>
+      <p className="mt-1 text-sm text-indigo-900">{t("Which would you rather?")}</p>
       <div className="mt-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
         <button type="button" onClick={() => choose(a.id)} className={choiceClass}>
           {a.name}
         </button>
         <span aria-hidden className="text-sm font-bold text-indigo-900">
-          vs
+          {t("vs")}
         </span>
         <button type="button" onClick={() => choose(b.id)} className={choiceClass}>
           {b.name}
@@ -50,7 +55,7 @@ export default function Duel({ options, onChampion, onCancel }: Props) {
         onClick={onCancel}
         className="mt-3 min-h-11 px-3 text-sm font-semibold text-indigo-700 underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
       >
-        Back to the wheel
+        {t("Back to the wheel")}
       </button>
     </section>
   );

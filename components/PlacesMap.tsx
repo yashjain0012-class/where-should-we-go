@@ -16,6 +16,8 @@ interface PlacesMapProps {
   center: { lat: number; lon: number } | null;
   /** Places whose opening hours are unknown (only set while "Open now" is on). */
   hoursUnknown?: ReadonlySet<string>;
+  /** Words shown on the map, so the page can translate them. */
+  labels?: MapLabels;
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -39,8 +41,16 @@ function makeIcon(L: typeof Leaflet, index: number, winner: boolean): Leaflet.Di
   });
 }
 
+export interface MapLabels {
+  region: string;
+  hoursUnknown: string;
+  openInMaps: string;
+}
+
+const ENGLISH_LABELS: MapLabels = { region: "Map of your options", hoursUnknown: "Hours unknown", openInMaps: "Open in Google Maps" };
+
 // Place names are untrusted (OpenStreetMap, and later share links): DOM nodes + textContent only.
-function buildPopup(place: Place, hoursUnknown: boolean): HTMLElement {
+function buildPopup(place: Place, hoursUnknown: boolean, labels: MapLabels): HTMLElement {
   const wrap = document.createElement("div");
   const name = document.createElement("strong");
   name.className = "maps-popup-name";
@@ -49,7 +59,7 @@ function buildPopup(place: Place, hoursUnknown: boolean): HTMLElement {
   if (hoursUnknown) {
     const note = document.createElement("span");
     note.className = "maps-popup-note";
-    note.textContent = "Hours unknown";
+    note.textContent = labels.hoursUnknown;
     wrap.append(note);
   }
   const link = document.createElement("a");
@@ -57,7 +67,7 @@ function buildPopup(place: Place, hoursUnknown: boolean): HTMLElement {
   link.href = mapsUrl(place);
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.textContent = "Open in Google Maps ↗";
+  link.textContent = `${labels.openInMaps} ↗`;
   wrap.append(link);
   return wrap;
 }
@@ -67,7 +77,9 @@ export default function PlacesMap({
   winnerId,
   center,
   hoursUnknown = NO_IDS,
+  labels = ENGLISH_LABELS,
 }: PlacesMapProps) {
+  const labelKey = `${labels.hoursUnknown}|${labels.openInMaps}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const leafletRef = useRef<typeof Leaflet | null>(null);
@@ -160,7 +172,7 @@ export default function PlacesMap({
     places.forEach((place, i) => {
       const isWinner = place.id === winnerId;
       const unknownHours = hoursUnknown.has(place.id);
-      const signature = `${i}|${isWinner}|${unknownHours}`;
+      const signature = `${i}|${isWinner}|${unknownHours}|${labelKey}`;
       let marker = markers.get(place.id);
       if (!marker) {
         marker = L.marker([place.lat, place.lon], {
@@ -169,7 +181,7 @@ export default function PlacesMap({
           alt: `${i + 1}. ${place.name}`,
           keyboard: true,
         })
-          .bindPopup(buildPopup(place, unknownHours))
+          .bindPopup(buildPopup(place, unknownHours, labels))
           .addTo(map);
         markers.set(place.id, marker);
         signatures.set(place.id, signature);
@@ -178,7 +190,7 @@ export default function PlacesMap({
         marker.options.title = `${i + 1}. ${place.name}`;
         marker.options.alt = `${i + 1}. ${place.name}`;
         marker.setIcon(makeIcon(L, i, isWinner));
-        marker.setPopupContent(buildPopup(place, unknownHours));
+        marker.setPopupContent(buildPopup(place, unknownHours, labels));
         signatures.set(place.id, signature);
       }
       marker.setZIndexOffset(isWinner ? 1000 : 0);
@@ -203,13 +215,15 @@ export default function PlacesMap({
     refitRef.current = applyView;
     userMovedRef.current = false;
     applyView(animate);
-  }, [ready, places, winnerId, center, hoursUnknown]);
+    // `labels` is only read for its text, which `labelKey` stands for (a new object each render would re-fit the map).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, places, winnerId, center, hoursUnknown, labelKey]);
 
   return (
     <div
       ref={containerRef}
       role="region"
-      aria-label="Map of your options"
+      aria-label={labels.region}
       className="relative z-0 h-72 w-full overflow-hidden rounded-2xl ring-1 ring-indigo-100 sm:h-96"
     />
   );

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { MAX_RADIUS, MIN_RADIUS, RADIUS_STEP, formatRadius } from "@/lib/categories";
+import { useT } from "@/lib/useT";
 import { useUnit } from "@/lib/useUnit";
 import { NO_FILTERS, activeFilterCount, prettyCuisine, type AttrFilters, type Diet } from "@/lib/filters";
 import { OPEN_AT_PRESETS, sameOpenAt, type OpenAt } from "@/lib/openAt";
@@ -75,6 +76,7 @@ export default function FiltersPanel({
   children,
 }: FiltersPanelProps) {
   const unit = useUnit();
+  const t = useT();
   const [custom, setCustom] = useState(false);
   const preset = OPEN_AT_PRESETS.find((p) => sameOpenAt(p.at, openAt));
   const selected = custom || !preset ? "custom" : preset.id;
@@ -88,13 +90,13 @@ export default function FiltersPanel({
 
   return (
     <section
-      aria-label="Filters"
+      aria-label={t("Filters")}
       className="flex flex-col gap-3 rounded-3xl bg-white/80 p-4 shadow-lg backdrop-blur sm:p-6"
     >
       {weather && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-4 py-2">
           <p className="text-sm font-semibold text-sky-950">
-            <span aria-hidden>{weather.emoji}</span> {weather.tempC}°C, {weather.label.toLowerCase()}
+            <span aria-hidden>{weather.emoji}</span> {weather.tempC}°C, {t(weather.label).toLowerCase()}
           </p>
           {weather.wet && (
             <button
@@ -107,7 +109,7 @@ export default function FiltersPanel({
                 preferIndoor ? "bg-sky-800 text-white shadow" : "bg-white text-sky-900 ring-1 ring-sky-200 hover:bg-sky-100"
               }`}
             >
-              Indoor places first
+              {t("Indoor places first")}
             </button>
           )}
         </div>
@@ -116,7 +118,7 @@ export default function FiltersPanel({
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <label htmlFor="radius" className="text-sm font-bold uppercase tracking-wider text-indigo-900">
-            Distance
+            {t("Distance")}
           </label>
           <output htmlFor="radius" className="text-lg font-extrabold text-indigo-950">
             {formatRadius(radius, unit)}
@@ -134,7 +136,7 @@ export default function FiltersPanel({
           onChange={(e) => onRadiusChange(Number(e.target.value))}
           className="mt-1 h-11 w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
         />
-        <p className="text-xs text-indigo-900/70">About {formatWalk(radius)} to the edge, in a straight line</p>
+        <p className="text-xs text-indigo-900/70">{t("About {walk} to the edge, in a straight line", { walk: formatWalk(radius, t) })}</p>
         <div aria-hidden className="flex justify-between text-xs text-indigo-900/70">
           <span>{formatRadius(MIN_RADIUS, unit)}</span>
           <span>{formatRadius(MAX_RADIUS, unit)}</span>
@@ -150,9 +152,9 @@ export default function FiltersPanel({
         className="flex min-h-11 items-center justify-between gap-3 rounded-xl bg-indigo-50 px-4 py-2 text-left transition hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span>
-          <span className="block font-semibold text-indigo-950">{openAt ? "Open then" : "Open now"}</span>
+          <span className="block font-semibold text-indigo-950">{openAt ? t("Open then") : t("Open now")}</span>
           <span className="block text-xs text-indigo-900/70">
-            Hides places that are closed. Places without listed hours stay in.
+            {t("Hides places that are closed. Places without listed hours stay in.")}
           </span>
         </span>
         <span
@@ -172,7 +174,7 @@ export default function FiltersPanel({
       {openNow && (
         <div className="flex flex-col gap-2 rounded-xl bg-indigo-50 px-4 py-3">
           <label htmlFor="open-at" className="text-sm font-semibold text-indigo-950">
-            Open when?
+            {t("Open when?")}
           </label>
           <select
             id="open-at"
@@ -191,16 +193,16 @@ export default function FiltersPanel({
           >
             {OPEN_AT_PRESETS.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.label}
+                {t(p.label)}
               </option>
             ))}
-            <option value="custom">Pick a time…</option>
+            <option value="custom">{t("Pick a time…")}</option>
           </select>
           {selected === "custom" && openAt && (
             <div className="flex gap-2">
               <input
                 type="time"
-                aria-label="Time"
+                aria-label={t("Time")}
                 value={`${pad(openAt.hour)}:${pad(openAt.minute)}`}
                 disabled={disabled}
                 onChange={(e) => {
@@ -210,34 +212,34 @@ export default function FiltersPanel({
                 className="min-h-11 flex-1 rounded-lg border-2 border-indigo-200 bg-white px-3 text-indigo-950 focus:border-indigo-500 focus:outline-none"
               />
               <select
-                aria-label="Day"
+                aria-label={t("Day")}
                 value={openAt.dayOffset}
                 disabled={disabled}
                 onChange={(e) => onOpenAtChange({ ...openAt, dayOffset: Number(e.target.value) as 0 | 1 })}
                 className="min-h-11 rounded-lg border-2 border-indigo-200 bg-white px-3 text-indigo-950 focus:border-indigo-500 focus:outline-none"
               >
-                <option value={0}>Today</option>
-                <option value={1}>Tomorrow</option>
+                <option value={0}>{t("Today")}</option>
+                <option value={1}>{t("Tomorrow")}</option>
               </select>
             </div>
           )}
-          <p className="text-xs text-indigo-900/70">Checked on the place&apos;s own clock. A time that has passed means tomorrow.</p>
+          <p className="text-xs text-indigo-900/70">{t("Checked on the place's own clock. A time that has passed means tomorrow.")}</p>
         </div>
       )}
 
       <details className="group rounded-xl bg-indigo-50 px-4">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-semibold text-indigo-950">
-          <span>More filters{chosen > 0 ? ` (${chosen})` : ""}</span>
+          <span>{t("More filters")}{chosen > 0 ? ` (${chosen})` : ""}</span>
           <span aria-hidden className="text-indigo-700 transition group-open:rotate-180">▾</span>
         </summary>
         <div className="flex flex-col gap-3 pb-3 pt-1">
           {foodCategory && (
             <fieldset>
-              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Diet</legend>
+              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">{t("Diet")}</legend>
               <div className="flex flex-wrap gap-2">
                 {(["any", "vegetarian", "vegan"] as Diet[]).map((d) => (
                   <Chip key={d} pressed={filters.diet === d} disabled={disabled} onClick={() => onFiltersChange({ ...filters, diet: d })}>
-                    {d === "any" ? "Any" : d.charAt(0).toUpperCase() + d.slice(1)}
+                    {d === "any" ? t("Any") : d === "vegetarian" ? t("Vegetarian") : t("Vegan")}
                   </Chip>
                 ))}
               </div>
@@ -245,7 +247,7 @@ export default function FiltersPanel({
           )}
           {foodCategory && cuisineChips.length > 0 && (
             <fieldset>
-              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Cuisine nearby</legend>
+              <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">{t("Cuisine nearby")}</legend>
               <div className="flex flex-wrap gap-2">
                 {cuisineChips.map((c) => (
                   <Chip key={c.name} pressed={filters.cuisines.includes(c.name)} disabled={disabled} onClick={() => toggleCuisine(c.name)}>
@@ -256,22 +258,21 @@ export default function FiltersPanel({
             </fieldset>
           )}
           <fieldset>
-            <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">Good to know</legend>
+            <legend className="mb-1 text-xs font-bold uppercase tracking-wider text-indigo-900">{t("Good to know")}</legend>
             <div className="flex flex-wrap gap-2">
               <Chip pressed={filters.outdoor} disabled={disabled} onClick={() => onFiltersChange({ ...filters, outdoor: !filters.outdoor })}>
-                Outdoor seating
+                {t("Outdoor seating")}
               </Chip>
               <Chip pressed={filters.wheelchair} disabled={disabled} onClick={() => onFiltersChange({ ...filters, wheelchair: !filters.wheelchair })}>
-                Wheelchair accessible
+                {t("Wheelchair accessible")}
               </Chip>
               <Chip pressed={filters.takeaway} disabled={disabled} onClick={() => onFiltersChange({ ...filters, takeaway: !filters.takeaway })}>
-                Takeaway
+                {t("Takeaway")}
               </Chip>
             </div>
           </fieldset>
           <p className="text-xs text-indigo-900/70">
-            Only places tagged in OpenStreetMap can be confirmed. Untagged places come after confirmed matches and are marked
-            &quot;unconfirmed&quot;; places tagged the other way are left out.
+            {t("Only places tagged in OpenStreetMap can be confirmed. Untagged places come after confirmed matches and are marked \"unconfirmed\"; places tagged the other way are left out.")}
           </p>
           {chosen > 0 && (
             <button
@@ -280,7 +281,7 @@ export default function FiltersPanel({
               onClick={() => onFiltersChange(NO_FILTERS)}
               className="min-h-11 self-start text-sm font-semibold text-indigo-700 underline disabled:opacity-60"
             >
-              Clear all
+              {t("Clear all")}
             </button>
           )}
         </div>

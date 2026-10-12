@@ -1,4 +1,5 @@
 import type { CategoryId } from "./types";
+import { msg } from "./i18n";
 import { formatDistance, type Unit } from "./units";
 
 export interface Category {
@@ -12,25 +13,25 @@ export interface Category {
 export const CATEGORIES: Category[] = [
   {
     id: "restaurants",
-    label: "Restaurants",
+    label: msg("Restaurants"),
     emoji: "🍽️",
     filters: ['["amenity"="restaurant"]'],
   },
   {
     id: "cafes",
-    label: "Cafés",
+    label: msg("Cafés"),
     emoji: "☕",
     filters: ['["amenity"="cafe"]'],
   },
   {
     id: "bars",
-    label: "Bars",
+    label: msg("Bars"),
     emoji: "🍻",
     filters: ['["amenity"="bar"]', '["amenity"="pub"]'],
   },
   {
     id: "things",
-    label: "Things to do",
+    label: msg("Things to do"),
     emoji: "🎡",
     filters: [
       '["tourism"="attraction"]',

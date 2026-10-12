@@ -1,4 +1,5 @@
 import type { OpenAt } from "./hours";
+import { english, msg, type Translate } from "./i18n";
 
 export type { OpenAt };
 
@@ -10,11 +11,11 @@ export interface OpenAtPreset {
 
 /** Quick choices for "open when?". null = right now. */
 export const OPEN_AT_PRESETS: OpenAtPreset[] = [
-  { id: "now", label: "Now", at: null },
-  { id: "dinner", label: "Tonight 7 pm", at: { dayOffset: 0, hour: 19, minute: 0 } },
-  { id: "evening", label: "Tonight 9 pm", at: { dayOffset: 0, hour: 21, minute: 0 } },
-  { id: "late", label: "Late, 11 pm", at: { dayOffset: 0, hour: 23, minute: 0 } },
-  { id: "lunch", label: "Tomorrow 1 pm", at: { dayOffset: 1, hour: 13, minute: 0 } },
+  { id: "now", label: msg("Now"), at: null },
+  { id: "dinner", label: msg("Tonight 7 pm"), at: { dayOffset: 0, hour: 19, minute: 0 } },
+  { id: "evening", label: msg("Tonight 9 pm"), at: { dayOffset: 0, hour: 21, minute: 0 } },
+  { id: "late", label: msg("Late, 11 pm"), at: { dayOffset: 0, hour: 23, minute: 0 } },
+  { id: "lunch", label: msg("Tomorrow 1 pm"), at: { dayOffset: 1, hour: 13, minute: 0 } },
 ];
 
 export function sameOpenAt(a: OpenAt | null, b: OpenAt | null): boolean {
@@ -28,7 +29,15 @@ export function formatClock(hour: number, minute: number): string {
 }
 
 /** "now", "today at 6:30 pm", "tomorrow at 1:00 pm" (used in labels). */
-export function describeOpenAt(at: OpenAt | null): string {
-  if (!at) return "now";
-  return `${at.dayOffset === 1 ? "tomorrow" : "today"} at ${formatClock(at.hour, at.minute)}`;
+export function describeOpenAt(at: OpenAt | null, t: Translate = english): string {
+  if (!at) return t("now");
+  const time = formatClock(at.hour, at.minute);
+  return at.dayOffset === 1 ? t("tomorrow at {time}", { time }) : t("today at {time}", { time });
+}
+
+/** "Open now", "Open today at 6:30 pm", "Open tomorrow at 1:00 pm" as a whole sentence, so it can be translated whole. */
+export function openLine(at: OpenAt | null, t: Translate = english): string {
+  if (!at) return t("Open now");
+  const time = formatClock(at.hour, at.minute);
+  return at.dayOffset === 1 ? t("Open tomorrow at {time}", { time }) : t("Open today at {time}", { time });
 }

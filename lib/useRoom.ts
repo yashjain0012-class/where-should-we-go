@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyVeto, isRoomCode, parseGuestMessage, parseHostMessage, stateFor, type RoomOption, type RoomState,
 } from "./room";
+import { msg } from "./i18n";
 import { RoomError, joinRoom, openHost, type GuestHandle, type HostHandle } from "./roomPeer";
 
 /** What the page needs to know about the room it is in. */
@@ -25,11 +26,11 @@ export interface RoomCallbacks {
 
 function describe(err: unknown): string {
   if (err instanceof RoomError) {
-    if (err.kind === "no-room") return "That room doesn't exist any more. Ask the host for a new link.";
-    if (err.kind === "unreachable") return "Couldn't connect. The room service didn't answer, or your network blocks direct connections between devices.";
-    return "The room service had a problem. Please try again in a moment.";
+    if (err.kind === "no-room") return msg("That room doesn't exist any more. Ask the host for a new link.");
+    if (err.kind === "unreachable") return msg("Couldn't connect. The room service didn't answer, or your network blocks direct connections between devices.");
+    return msg("The room service had a problem. Please try again in a moment.");
   }
-  return "Something went wrong with the room. Please try again.";
+  return msg("Something went wrong with the room. Please try again.");
 }
 
 export function useRoom(callbacks: RoomCallbacks) {

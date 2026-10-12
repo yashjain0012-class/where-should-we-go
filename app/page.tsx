@@ -11,6 +11,7 @@ import PrefsPanel from "@/components/PrefsPanel";
 import RoomPanel from "@/components/RoomPanel";
 import ShareCardButton from "@/components/ShareCardButton";
 import ThemeToggle from "@/components/ThemeToggle";
+import LangToggle from "@/components/LangToggle";
 import UnitToggle from "@/components/UnitToggle";
 import ResultActions from "@/components/ResultActions";
 import VetoRound from "@/components/VetoRound";
@@ -31,11 +32,14 @@ import {
   NO_FILTERS, activeFilterCount, cuisineOptions, describeAttrs, matchOf, prettyCuisine, selectWheel, type AttrFilters,
 } from "@/lib/filters";
 import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
-import { describeOpenAt } from "@/lib/openAt";
+import { openLine } from "@/lib/openAt";
 import { saveLastWheel } from "@/lib/lastWheel";
 import { parseRoomHash, type RoomOption, type RoomState } from "@/lib/room";
 import { useRoom } from "@/lib/useRoom";
 import { useUnit } from "@/lib/useUnit";
+import { useT } from "@/lib/useT";
+import { translateApi } from "@/lib/apiMessages";
+import { getLang, msg, translator } from "@/lib/i18n";
 import { getUnit } from "@/lib/units";
 import { mapsUrl } from "@/lib/maps";
 import {
@@ -96,12 +100,12 @@ async function fetchJson<T>(url: string): Promise<T> {
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(50000) });
   } catch {
-    throw new ApiError("That took too long or the connection dropped. Please try again.");
+    throw new ApiError(msg("That took too long or the connection dropped. Please try again."));
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(
-      data?.error ?? "Something went wrong. Please try again.",
+      data?.error ?? msg("Something went wrong. Please try again."),
       typeof data?.retryRadius === "number" ? data.retryRadius : undefined,
     );
   }
@@ -182,6 +186,7 @@ export default function Home() {
   // Favourites, hidden places and recent winners, remembered in this browser. Empty for the server render.
   const prefs = useSyncExternalStore(subscribePrefs, getPrefs, getServerPrefs);
   const unit = useUnit();
+  const t = useT();
 
   // Sound on/off, remembered between visits. Always "on" for the server render.
   const muted = useSyncExternalStore(subscribeMuted, getMuted, () => false);
@@ -395,7 +400,11 @@ export default function Home() {
       setShareNote(null);
       setShareFallbackUrl(null);
       const id = ++requestId.current;
-      setLoading(`Finding places within ${formatRadius(rad, getUnit())}… busy free servers can take up to 30 seconds.`);
+      setLoading(
+        translator(getLang())("Finding places within {radius}… busy free servers can take up to 30 seconds.", {
+          radius: formatRadius(rad, getUnit()),
+        }),
+      );
       setError(null);
       setCanRetry(false);
       setNotice(null);
@@ -412,7 +421,7 @@ export default function Home() {
         const indoor = forecast?.wet ?? false;
         let states: Record<string, OpenState> = {};
         if (openNowRef.current) {
-          setLoading("Checking opening hours…");
+          setLoading(msg("Checking opening hours…"));
           states = await openStates(data.places, data.tz, new Date(), openAtRef.current);
           if (id !== requestId.current) return;
         }
@@ -429,7 +438,7 @@ export default function Home() {
         hadResults.current = true;
       } catch (e) {
         if (id !== requestId.current) return;
-        const message = e instanceof Error ? e.message : "Something went wrong.";
+        const message = e instanceof Error ? e.message : msg("Something went wrong.");
         if (keepOnError && hadResults.current) {
           setRadius(goodRadius.current);
           setNotice({
@@ -457,11 +466,11 @@ export default function Home() {
     if (spinning) return;
     const q = query.trim();
     if (!q) {
-      setError("Type a neighbourhood or city first, or use your location.");
+      setError(msg("Type a neighbourhood or city first, or use your location."));
       return;
     }
     const id = ++requestId.current;
-    setLoading("Looking up that location…");
+    setLoading(msg("Looking up that location…"));
     setError(null);
     setCanRetry(false);
     setWinner(null);
@@ -474,17 +483,17 @@ export default function Home() {
     } catch (err) {
       if (id !== requestId.current) return;
       setLoading(null);
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : msg("Something went wrong."));
     }
   }
 
   function handleUseLocation() {
     if (spinning) return;
     if (!("geolocation" in navigator)) {
-      setError("Your browser doesn't support location. Type a neighbourhood instead.");
+      setError(msg("Your browser doesn't support location. Type a neighbourhood instead."));
       return;
     }
-    setLoading("Getting your location…");
+    setLoading(msg("Getting your location…"));
     setError(null);
     setCanRetry(false);
     navigator.geolocation.getCurrentPosition(
@@ -502,8 +511,8 @@ export default function Home() {
         setLoading(null);
         setError(
           err.code === err.PERMISSION_DENIED
-            ? "Location permission was denied. Type a neighbourhood instead."
-            : "Couldn't get your location. Type a neighbourhood instead.",
+            ? msg("Location permission was denied. Type a neighbourhood instead.")
+            : msg("Couldn't get your location. Type a neighbourhood instead."),
         );
       },
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 },
@@ -549,7 +558,7 @@ export default function Home() {
       return;
     }
     const id = ++requestId.current;
-    setLoading("Checking opening hours…");
+    setLoading(msg("Checking opening hours…"));
     const states = await openStates(candidates, tz, new Date(), openAtRef.current);
     if (id !== requestId.current) return;
     setOpenStateById(states);
@@ -561,17 +570,17 @@ export default function Home() {
   async function handleMotion() {
     if (motionOn) {
       setMotion(false);
-      setMotionNote("Vibration and shake-to-spin are off.");
+      setMotionNote(msg("Vibration and shake-to-spin are off."));
       return;
     }
     const allowed = await requestMotionPermission();
     if (!allowed) {
-      setMotionNote("Motion access was denied, so shake-to-spin can't work. You can allow it in the browser's site settings.");
+      setMotionNote(msg("Motion access was denied, so shake-to-spin can't work. You can allow it in the browser's site settings."));
       return;
     }
     setMotion(true);
     confirmBuzz();
-    setMotionNote("Shake your phone to spin. The wheel vibrates as it slows down.");
+    setMotionNote(msg("Shake your phone to spin. The wheel vibrates as it slows down."));
   }
 
   // Switch between searching for places and typing your own list. The places wheel is kept for when you come back.
@@ -596,7 +605,7 @@ export default function Home() {
 
   function handleApplyCustom(text: string) {
     if (spinning) return;
-    const { items, notes } = parseCustomText(text);
+    const { items, notes } = parseCustomText(text, t);
     if (items.length < 2) return;
     setCustomItems(items);
     setCustomNotes(notes);
@@ -745,7 +754,7 @@ export default function Home() {
     setWinner(null);
     if (!openNowRef.current || loading) return; // a pending search will pick the new time up
     const id = ++requestId.current;
-    setLoading("Checking opening hours…");
+    setLoading(msg("Checking opening hours…"));
     const states = await openStates(candidates, tz, new Date(), next);
     if (id !== requestId.current) return;
     setOpenStateById(states);
@@ -780,11 +789,11 @@ export default function Home() {
     try {
       await navigator.clipboard.writeText(url);
       setShareFallbackUrl(null);
-      flashNote("Link copied ✓");
+      flashNote(msg("Link copied ✓"));
     } catch {
       // Clipboard blocked (permissions, insecure context): show the link to copy by hand.
       setShareFallbackUrl(url);
-      flashNote("Couldn't copy automatically. Copy the link below.");
+      flashNote(msg("Couldn't copy automatically. Copy the link below."));
     }
   }
 
@@ -798,10 +807,14 @@ export default function Home() {
     const url = buildShareUrl();
     if (!url) return;
     const data = {
-      title: "Where should we go?",
+      title: t("Where should we go?"),
       text: customMode
-        ? `Help us pick! ${options.length} options. Spin the wheel:`
-        : `Help us pick! ${options.length} ${getCategory(category)?.label.toLowerCase()} near ${areaName(coords?.label ?? "")}. Spin the wheel:`,
+        ? t("Help us pick! {n} options. Spin the wheel:", { n: options.length })
+        : t("Help us pick! {n} {category} near {area}. Spin the wheel:", {
+            n: options.length,
+            category: t(getCategory(category)?.label ?? "").toLowerCase(),
+            area: areaName(coords?.label ?? ""),
+          }),
       url,
     };
     if (canNativeShare && (!navigator.canShare || navigator.canShare(data))) {
@@ -879,14 +892,23 @@ export default function Home() {
 
   // Filter feedback: too few places left after the radius and "Open now" are applied.
   const widerRadius = snapRadius(Math.min(MAX_RADIUS, shownRadius * 2));
+  const radiusText = formatRadius(shownRadius, unit);
+  const tryWider =
+    openNow && activeFilterCount(filters)
+      ? t("Try a wider radius or show closed places too, or clear the cuisine and dietary filters.")
+      : openNow
+        ? t("Try a wider radius or show closed places too.")
+        : activeFilterCount(filters)
+          ? t("Try a wider radius, or clear the cuisine and dietary filters.")
+          : t("Try a wider radius.");
   const fewMessage =
     candidates.length === 0
-      ? `Nothing found within ${formatRadius(shownRadius, unit)}. A wider radius or another category might help.`
+      ? t("Nothing found within {radius}. A wider radius or another category might help.", { radius: radiusText })
       : `${
-          fetched.length === 0 ? "No places match" : "Only 1 place matches"
-        } these filters within ${formatRadius(shownRadius, unit)}. Try a wider radius${
-          openNow ? " or show closed places too" : ""
-        }${activeFilterCount(filters) ? ", or clear the cuisine and dietary filters" : ""}.`;
+          fetched.length === 0
+            ? t("No places match these filters within {radius}.", { radius: radiusText })
+            : t("Only 1 place matches these filters within {radius}.", { radius: radiusText })
+        } ${tryWider}`;
   // With "Open now" on, anything not confirmed open has no usable hours.
   const unknownIds = useMemo<ReadonlySet<string>>(
     () =>
@@ -903,6 +925,7 @@ export default function Home() {
       }`}
     >
       <div className="-mb-3 flex justify-end gap-2">
+        <LangToggle />
         <UnitToggle />
         <ThemeToggle />
       </div>
@@ -913,12 +936,12 @@ export default function Home() {
             sharedMode && !editing ? "text-2xl" : "text-4xl"
           }`}
         >
-          Where should we go? 🎡
+          {t("Where should we go?")} 🎡
         </h1>
         <p
           className={`mt-2 text-indigo-900/80 ${sharedMode && !editing ? "hidden sm:block" : ""}`}
         >
-          Pick a spot, pick a vibe, and let the wheel settle the argument.
+          {t("Pick a spot, pick a vibe, and let the wheel settle the argument.")}
         </p>
       </header>
 
@@ -940,12 +963,12 @@ export default function Home() {
           className="flex items-start gap-3 rounded-2xl bg-amber-100 p-4 text-sm text-amber-950 shadow"
         >
           <p className="flex-1">
-            That share link looks broken or incomplete, so here&apos;s a fresh search instead.
+            {t("That share link looks broken or incomplete, so here's a fresh search instead.")}
           </p>
           <button
             type="button"
             onClick={() => setLinkProblem(false)}
-            aria-label="Dismiss"
+            aria-label={t("Dismiss")}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-amber-200 focus-visible:outline-2 focus-visible:outline-amber-700"
           >
             ✕
@@ -956,9 +979,9 @@ export default function Home() {
       {sharedMode && !editing && coords && (
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/80 px-4 py-3 shadow backdrop-blur">
           <p className="min-w-0 text-sm text-indigo-950">
-            <span className="font-bold">🔗 Shared wheel</span>{" "}
+            <span className="font-bold">🔗 {t("Shared wheel")}</span>{" "}
             <span className="text-indigo-900/80">
-              · {cat?.emoji} {cat?.label} near {areaName(coords.label)}
+              · {cat?.emoji} {t("{category} near {area}", { category: t(cat?.label ?? ""), area: areaName(coords.label) })}
             </span>
           </p>
           <button
@@ -966,17 +989,17 @@ export default function Home() {
             onClick={() => setEditing(true)}
             className="min-h-11 shrink-0 rounded-xl border-2 border-indigo-600 bg-white px-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
-            New search
+            {t("New search")}
           </button>
         </div>
       )}
 
       {!sharedMode && !inRoomAsGuest && (
-        <div role="group" aria-label="What to spin" className="mx-auto flex w-full max-w-md gap-1 rounded-full bg-white/70 p-1 shadow">
+        <div role="group" aria-label={t("What to spin")} className="mx-auto flex w-full max-w-md gap-1 rounded-full bg-white/70 p-1 shadow">
           {(
             [
-              ["places", "📍 Places near me"],
-              ["custom", "✏️ My own list"],
+              ["places", msg("📍 Places near me")],
+              ["custom", msg("✏️ My own list")],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -989,7 +1012,7 @@ export default function Home() {
                 mode === id ? "bg-indigo-950 text-white shadow" : "text-indigo-900 hover:bg-indigo-100"
               }`}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -1012,13 +1035,13 @@ export default function Home() {
       >
         <div className="flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor="location">
-            Neighbourhood or city
+            {t("Neighbourhood or city")}
           </label>
           <input
             id="location"
             value={query}
             onChange={(e) => setQuery(e.target.value.slice(0, 120))}
-            placeholder="Neighbourhood or city, e.g. Shoreditch, London"
+            placeholder={t("Neighbourhood or city, e.g. Shoreditch, London")}
             className="min-w-0 flex-1 rounded-xl border-2 border-indigo-200 bg-white px-4 py-3 text-indigo-950 placeholder:text-indigo-900/50 focus:border-indigo-500 focus:outline-none"
             autoComplete="off"
           />
@@ -1028,7 +1051,7 @@ export default function Home() {
               disabled={!!loading || spinning}
               className="flex-1 rounded-xl bg-indigo-600 px-5 py-3 font-semibold text-white shadow transition hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
             >
-              Search
+              {t("Search")}
             </button>
             <button
               type="button"
@@ -1036,13 +1059,13 @@ export default function Home() {
               disabled={!!loading || spinning}
               className="flex-1 rounded-xl border-2 border-indigo-600 bg-white px-4 py-3 font-semibold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
             >
-              📍 Use my location
+              📍 {t("Use my location")}
             </button>
           </div>
         </div>
 
         <fieldset>
-          <legend className="sr-only">Category</legend>
+          <legend className="sr-only">{t("Category")}</legend>
           <div className="flex flex-wrap gap-2">
             {CATEGORIES.map((c) => (
               <button
@@ -1057,7 +1080,7 @@ export default function Home() {
                     : "bg-indigo-100 text-indigo-900 hover:bg-indigo-200"
                 }`}
               >
-                {c.emoji} {c.label}
+                {c.emoji} {t(c.label)}
               </button>
             ))}
           </div>
@@ -1066,26 +1089,26 @@ export default function Home() {
         {loading && (
           <p role="status" className="flex items-center gap-2 text-sm text-indigo-900">
             <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-            {loading}
+            {t(loading)}
           </p>
         )}
         {error && (
           <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-red-700">
-            <span>{error}</span>
+            <span>{translateApi(error, t)}</span>
             {canRetry && coords && (
               <button
                 type="button"
                 onClick={() => void loadPlaces(coords, category, radius)}
                 className="rounded-lg bg-red-100 px-3 py-1 font-semibold text-red-800 hover:bg-red-200"
               >
-                Try again
+                {t("Try again")}
               </button>
             )}
           </div>
         )}
         {coords && !loading && !error && (
           <p className="truncate text-xs text-indigo-900/70" title={coords.label}>
-            Near: {coords.label}
+            {t("Near: {place}", { place: coords.label })}
           </p>
         )}
       </form>
@@ -1114,7 +1137,7 @@ export default function Home() {
               className="flex flex-col gap-2 rounded-xl bg-amber-100 p-3 text-sm text-amber-950"
             >
               <p>
-                {notice.text} Your previous {formatRadius(shownRadius, unit)} results are still on the wheel.
+                {translateApi(notice.text, t)} {t("Your previous {radius} results are still on the wheel.", { radius: formatRadius(shownRadius, unit) })}
               </p>
               <div className="flex flex-wrap gap-2">
                 {notice.retryRadius && (
@@ -1123,7 +1146,7 @@ export default function Home() {
                     onClick={() => commitRadius(notice.retryRadius!)}
                     className="min-h-11 rounded-xl bg-amber-800 px-4 font-semibold text-white hover:bg-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
                   >
-                    Try {formatRadius(notice.retryRadius, unit)}
+                    {t("Try {radius}", { radius: formatRadius(notice.retryRadius, unit) })}
                   </button>
                 )}
                 <button
@@ -1131,7 +1154,7 @@ export default function Home() {
                   onClick={() => commitRadius(notice.radius)}
                   className="min-h-11 rounded-xl border-2 border-amber-800 bg-white px-4 font-semibold text-amber-900 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
                 >
-                  Try again
+                  {t("Try again")}
                 </button>
               </div>
             </div>
@@ -1154,7 +1177,7 @@ export default function Home() {
           {loading && searched && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span className="rounded-full bg-indigo-950 px-4 py-2 text-sm font-semibold text-white shadow-lg">
-                Updating…
+                {t("Updating…")}
               </span>
             </div>
           )}
@@ -1163,7 +1186,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           {inRoomAsGuest ? (
             <p role="status" className="rounded-full bg-indigo-100 px-6 py-4 text-center font-semibold text-indigo-950">
-              {spinning ? "Spinning…" : winner ? "The host can spin again" : "Waiting for the host to spin…"}
+              {spinning ? t("Spinning…") : winner ? t("The host can spin again") : t("Waiting for the host to spin…")}
             </p>
           ) : (
           <button
@@ -1172,7 +1195,7 @@ export default function Home() {
             disabled={!canSpin}
             className="whitespace-nowrap rounded-full bg-gradient-to-r from-pink-500 via-orange-500 to-yellow-400 px-8 py-4 text-xl sm:px-12 font-extrabold text-white shadow-lg transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
           >
-            {spinning ? "Spinning…" : winner ? "Spin again" : "Spin!"}
+            {spinning ? t("Spinning…") : winner ? t("Spin again") : t("Spin!")}
           </button>
           )}
           <button
@@ -1181,8 +1204,8 @@ export default function Home() {
               setMuted(!muted);
               if (muted) unlockAudio(); // turning sound back on is a tap: prepare audio now
             }}
-            aria-label={muted ? "Turn sound on" : "Turn sound off"}
-            title={muted ? "Sound is off" : "Sound is on"}
+            aria-label={muted ? t("Turn sound on") : t("Turn sound off")}
+            title={muted ? t("Sound is off") : t("Sound is on")}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-xl shadow ring-1 ring-indigo-100 transition hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
           >
             <span aria-hidden>{muted ? "🔇" : "🔊"}</span>
@@ -1192,8 +1215,8 @@ export default function Home() {
               type="button"
               onClick={() => void handleMotion()}
               aria-pressed={motionOn}
-              aria-label="Vibrate and shake to spin"
-              title={motionOn ? "Vibration and shake-to-spin are on" : "Turn on vibration and shake-to-spin"}
+              aria-label={t("Vibrate and shake to spin")}
+              title={motionOn ? t("Vibration and shake-to-spin are on") : t("Turn on vibration and shake-to-spin")}
               className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl shadow ring-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${
                 motionOn ? "bg-indigo-950 text-white ring-indigo-950" : "bg-white ring-indigo-100 hover:bg-indigo-50"
               }`}
@@ -1204,7 +1227,7 @@ export default function Home() {
         </div>
 
         <p aria-live="polite" className={motionNote ? "-mt-3 max-w-md text-center text-sm text-indigo-900" : "sr-only"}>
-          {motionNote}
+          {motionNote ? t(motionNote) : null}
         </p>
 
         {options.length >= 2 && !spinning && helper === "none" && !inRoomAsGuest && (
@@ -1215,7 +1238,7 @@ export default function Home() {
                 onClick={() => void startHost()}
                 className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
               >
-                👥 Live room
+                👥 {t("Live room")}
               </button>
             )}
             {options.length >= 3 && (
@@ -1224,7 +1247,7 @@ export default function Home() {
                 onClick={() => setHelper("veto")}
                 className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
               >
-                🙈 Take turns vetoing
+                🙈 {t("Take turns vetoing")}
               </button>
             )}
             <button
@@ -1235,7 +1258,7 @@ export default function Home() {
               }}
               className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
             >
-              🏆 Head-to-head instead
+              🏆 {t("Head-to-head instead")}
             </button>
           </div>
         )}
@@ -1277,7 +1300,7 @@ export default function Home() {
                   disabled={options.length < 2 || !!loading}
                   className="min-h-11 flex-1 rounded-xl bg-indigo-950 px-4 py-2 font-semibold text-white shadow transition hover:bg-indigo-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Share this wheel
+                  {t("Share this wheel")}
                 </button>
               )}
               <button
@@ -1290,21 +1313,21 @@ export default function Home() {
                     : "bg-indigo-950 text-white shadow hover:bg-indigo-900"
                 }`}
               >
-                {canNativeShare ? "Copy link" : "Copy share link"}
+                {canNativeShare ? t("Copy link") : t("Copy share link")}
               </button>
             </div>
             <p
               aria-live="polite"
               className={shareNote ? "text-center text-sm font-semibold text-indigo-900" : "sr-only"}
             >
-              {shareNote}
+              {shareNote ? t(shareNote) : null}
             </p>
             {shareFallbackUrl && (
               <input
                 ref={fallbackInput}
                 readOnly
                 value={shareFallbackUrl}
-                aria-label="Share link"
+                aria-label={t("Share link")}
                 onFocus={(e) => e.currentTarget.select()}
                 className="w-full rounded-xl border-2 border-indigo-200 bg-white px-3 py-2 text-xs text-indigo-950"
               />
@@ -1314,7 +1337,7 @@ export default function Home() {
 
         {!options.length && !loading && !searched && (
           <p className="text-center text-sm text-indigo-900/70">
-            Search a place above to fill the wheel with nearby {cat?.label.toLowerCase()}.
+            {t("Search a place above to fill the wheel with nearby {category}.", { category: t(cat?.label ?? "").toLowerCase() })}
           </p>
         )}
         {searched && !loading && !sharedMode && !customMode && fetched.length < 2 && (
@@ -1331,7 +1354,7 @@ export default function Home() {
                   disabled={spinning}
                   className="min-h-11 rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
                 >
-                  Widen to {formatRadius(widerRadius, unit)}
+                  {t("Widen to {radius}", { radius: formatRadius(widerRadius, unit) })}
                 </button>
               )}
               {openNow && (
@@ -1341,7 +1364,7 @@ export default function Home() {
                   disabled={spinning}
                   className="min-h-11 rounded-xl border-2 border-indigo-600 bg-white px-4 font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
                 >
-                  Show closed places too
+                  {t("Show closed places too")}
                 </button>
               )}
               {activeFilterCount(filters) > 0 && (
@@ -1351,7 +1374,7 @@ export default function Home() {
                   disabled={spinning}
                   className="min-h-11 rounded-xl border-2 border-indigo-600 bg-white px-4 font-semibold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
                 >
-                  Clear filters
+                  {t("Clear filters")}
                 </button>
               )}
             </div>
@@ -1359,7 +1382,7 @@ export default function Home() {
         )}
         {options.length === 1 && !loading && (fetched.length >= 2 || sharedMode) && (
           <p className="text-center text-sm text-indigo-900">
-            Only one option left. Reset the options to spin again.
+            {t("Only one option left. Reset the options to spin again.")}
           </p>
         )}
 
@@ -1367,15 +1390,15 @@ export default function Home() {
           {winner && (
             <div className="result-pop mx-auto w-full max-w-md rounded-2xl bg-indigo-950 p-5 text-center text-white shadow-xl">
               <p className="text-sm uppercase tracking-widest text-indigo-200">
-                {customMode ? "🎡 The wheel says" : `${cat?.emoji} Let's go to`}
+                {customMode ? `🎡 ${t("The wheel says")}` : `${cat?.emoji} ${t("Let's go to")}`}
               </p>
               <p className="mt-1 text-2xl font-extrabold">{winner.name}</p>
-              {!customMode && describeAttrs(winner.attrs).length > 0 && (
-                <p className="mt-1 text-sm text-indigo-200">{describeAttrs(winner.attrs).join(" · ")}</p>
+              {!customMode && describeAttrs(winner.attrs, t).length > 0 && (
+                <p className="mt-1 text-sm text-indigo-200">{describeAttrs(winner.attrs, t).join(" · ")}</p>
               )}
               {!customMode && openNow && (
                 <p className="mt-1 text-sm text-indigo-200">
-                  {unknownIds.has(winner.id) ? "Hours unknown. Check before you go." : `Open ${describeOpenAt(openAt)}`}
+                  {unknownIds.has(winner.id) ? t("Hours unknown. Check before you go.") : openLine(openAt, t)}
                 </p>
               )}
               {!customMode && (
@@ -1385,7 +1408,7 @@ export default function Home() {
                 rel="noopener noreferrer"
                 className="mt-4 inline-block rounded-full bg-white px-5 py-2 font-semibold text-indigo-950 hover:bg-indigo-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
-                Open in Google Maps ↗
+                {t("Open in Google Maps")} ↗
               </a>
               )}
               <ShareCardButton
@@ -1394,7 +1417,7 @@ export default function Home() {
                 details={
                   customMode
                     ? []
-                    : [...(winner.distance !== undefined ? [`${walkMinutes(winner.distance)} min walk`] : []), ...describeAttrs(winner.attrs)]
+                    : [...(winner.distance !== undefined ? [formatWalk(winner.distance, t)] : []), ...describeAttrs(winner.attrs, t)]
                 }
                 colors={SLICE_COLORS}
               />
@@ -1406,7 +1429,7 @@ export default function Home() {
                     onClick={() => toggleFavourite(winner)}
                     className="min-h-11 rounded-full border-2 border-indigo-300 px-4 text-sm font-semibold text-white hover:bg-indigo-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   >
-                    {winner.id in prefs.favourites ? "★ Favourite" : "☆ Add to favourites"}
+                    {winner.id in prefs.favourites ? `★ ${t("Favourite")}` : `☆ ${t("Add to favourites")}`}
                   </button>
                   <button
                     type="button"
@@ -1417,7 +1440,7 @@ export default function Home() {
                     }}
                     className="min-h-11 rounded-full border-2 border-indigo-300 px-4 text-sm font-semibold text-white hover:bg-indigo-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   >
-                    🚫 Never show again
+                    🚫 {t("Never show again")}
                   </button>
                 </div>
               )}
@@ -1436,7 +1459,7 @@ export default function Home() {
           <div className="w-full">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wider text-indigo-900">
-                Options ({options.length})
+                {t("Options ({n})", { n: options.length })}
               </h2>
               {removedSome && (
                 <button
@@ -1448,11 +1471,11 @@ export default function Home() {
                   }}
                   className="text-sm font-semibold text-indigo-700 underline disabled:opacity-50"
                 >
-                  Reset options
+                  {t("Reset options")}
                 </button>
               )}
             </div>
-            <ul aria-label="Wheel options" className="flex flex-wrap gap-2">
+            <ul aria-label={t("Wheel options")} className="flex flex-wrap gap-2">
               {options.map((p, i) => (
                 <li
                   key={p.id}
@@ -1467,8 +1490,8 @@ export default function Home() {
                   </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
                   {p.distance !== undefined && (
-                    <span title={formatWalk(p.distance)} className="shrink-0 text-[11px] text-slate-600">
-                      {walkMinutes(p.distance)} min
+                    <span title={formatWalk(p.distance, t)} className="shrink-0 text-[11px] text-slate-600">
+                      {t("{n} min", { n: walkMinutes(p.distance) })}
                     </span>
                   )}
                   {p.attrs?.cuisine?.[0] && (
@@ -1476,20 +1499,20 @@ export default function Home() {
                   )}
                   {activeFilterCount(filters) > 0 && matchOf(p, filters) === "unknown" && (
                     <span
-                      title="Not tagged in OpenStreetMap, so it may or may not match"
+                      title={t("Not tagged in OpenStreetMap, so it may or may not match")}
                       className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
                     >
-                      unconfirmed
+                      {t("unconfirmed")}
                     </span>
                   )}
                   {openNow &&
                     (unknownIds.has(p.id) ? (
                       <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                        hours unknown
+                        {t("hours unknown")}
                       </span>
                     ) : (
                       <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">
-                        open
+                        {t("open")}
                       </span>
                     ))}
                   {!sharedMode && !customMode && (
@@ -1497,7 +1520,7 @@ export default function Home() {
                       type="button"
                       onClick={() => toggleFavourite(p)}
                       aria-pressed={p.id in prefs.favourites}
-                      aria-label={`Favourite ${p.name}`}
+                      aria-label={t("Favourite {name}", { name: p.name })}
                       className="flex h-6 w-6 items-center justify-center rounded-full text-amber-500 hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-amber-600"
                     >
                       <span aria-hidden>{p.id in prefs.favourites ? "★" : "☆"}</span>
@@ -1508,10 +1531,10 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => handleGuestVeto(p.id)}
-                        aria-label={`Veto ${p.name}`}
+                        aria-label={t("Veto {name}", { name: p.name })}
                         className="min-h-8 rounded-full bg-red-100 px-2 text-xs font-semibold text-red-800 hover:bg-red-200 focus-visible:outline-2 focus-visible:outline-red-600"
                       >
-                        🙈 Veto
+                        🙈 {t("Veto")}
                       </button>
                     )
                   ) : (
@@ -1519,7 +1542,7 @@ export default function Home() {
                       type="button"
                       onClick={() => removeOption(p.id)}
                       disabled={spinning}
-                      aria-label={`Remove ${p.name}`}
+                      aria-label={t("Remove {name}", { name: p.name })}
                       className="flex h-6 w-6 items-center justify-center rounded-full text-indigo-700 hover:bg-red-100 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       ✕
@@ -1536,7 +1559,7 @@ export default function Home() {
             onClick={() => setOptions(fetched)}
             className="rounded-full bg-indigo-100 px-4 py-2 text-sm font-semibold text-indigo-900 hover:bg-indigo-200"
           >
-            Reset options
+            {t("Reset options")}
           </button>
         )}
 
@@ -1545,12 +1568,12 @@ export default function Home() {
         {!customMode && (options.length > 0 || (searched && coords)) && (
           <div className="w-full">
             <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-indigo-900">
-              Map
+              {t("Map")}
             </h2>
             <ErrorBoundary
               fallback={
                 <p role="status" className="rounded-2xl bg-slate-100 p-4 text-sm text-slate-700">
-                  The map couldn&apos;t load. It needs a connection the first time. The wheel and options above still work.
+                  {t("The map couldn't load. It needs a connection the first time. The wheel and options above still work.")}
                 </p>
               }
             >
@@ -1559,17 +1582,18 @@ export default function Home() {
                 winnerId={winner?.id ?? null}
                 center={mapCenter}
                 hoursUnknown={unknownIds}
+                labels={{ region: t("Map of your options"), hoursUnknown: t("Hours unknown"), openInMaps: t("Open in Google Maps") }}
               />
             </ErrorBoundary>
             <p className="mt-2 text-xs text-indigo-900/70">
-              Tap a pin for its name and a Google Maps link. Pin colours and numbers match the wheel.
+              {t("Tap a pin for its name and a Google Maps link. Pin colours and numbers match the wheel.")}
             </p>
           </div>
         )}
       </section>
 
       <footer className="pb-4 text-center text-xs text-indigo-900/70">
-        Place data © OpenStreetMap contributors · Geocoding by Nominatim · Search by Overpass · Weather by Open-Meteo.com
+        {t("Place data © OpenStreetMap contributors · Geocoding by Nominatim · Search by Overpass · Weather by Open-Meteo.com")}
       </footer>
     </main>
   );
