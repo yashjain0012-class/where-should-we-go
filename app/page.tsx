@@ -32,7 +32,7 @@ import {
   NO_FILTERS, activeFilterCount, cuisineOptions, describeAttrs, matchOf, prettyCuisine, selectWheel, type AttrFilters,
 } from "@/lib/filters";
 import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
-import { openLine } from "@/lib/openAt";
+import { openLine, sameOpenAt } from "@/lib/openAt";
 import { saveLastWheel } from "@/lib/lastWheel";
 import { parseRoomHash, type RoomOption, type RoomState } from "@/lib/room";
 import { useRoom } from "@/lib/useRoom";
@@ -127,6 +127,24 @@ function pickWheel(
     exclude: excludedIds(prefs, Date.now()),
     favourites: new Set(Object.keys(prefs.favourites)),
   });
+}
+
+/**
+ * Opening hours for the time chosen right now. Loading the hours library takes a moment, and the person can pick another
+ * time meanwhile (the new choice lands in `atRef`), so check again until the answer matches the current choice.
+ */
+async function openStatesUpToDate(
+  places: Place[],
+  tz: string | null,
+  atRef: { current: OpenAt | null },
+): Promise<Record<string, OpenState>> {
+  let at = atRef.current;
+  let states = await openStates(places, tz, new Date(), at);
+  while (!sameOpenAt(at, atRef.current)) {
+    at = atRef.current;
+    states = await openStates(places, tz, new Date(), at);
+  }
+  return states;
 }
 
 const NO_IDS: ReadonlySet<string> = new Set();
@@ -422,7 +440,7 @@ export default function Home() {
         let states: Record<string, OpenState> = {};
         if (openNowRef.current) {
           setLoading(msg("Checking opening hours…"));
-          states = await openStates(data.places, data.tz, new Date(), openAtRef.current);
+          states = await openStatesUpToDate(data.places, data.tz, openAtRef);
           if (id !== requestId.current) return;
         }
         setCandidates(data.places);
@@ -559,7 +577,7 @@ export default function Home() {
     }
     const id = ++requestId.current;
     setLoading(msg("Checking opening hours…"));
-    const states = await openStates(candidates, tz, new Date(), openAtRef.current);
+    const states = await openStatesUpToDate(candidates, tz, openAtRef);
     if (id !== requestId.current) return;
     setOpenStateById(states);
     setOptions(pickWheel(candidates, true, states, filtersRef.current, preferIndoorRef.current));
@@ -755,7 +773,7 @@ export default function Home() {
     if (!openNowRef.current || loading) return; // a pending search will pick the new time up
     const id = ++requestId.current;
     setLoading(msg("Checking opening hours…"));
-    const states = await openStates(candidates, tz, new Date(), next);
+    const states = await openStatesUpToDate(candidates, tz, openAtRef);
     if (id !== requestId.current) return;
     setOpenStateById(states);
     setOptions(pickWheel(candidates, true, states, filtersRef.current, preferIndoorRef.current));
