@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { MAX_RADIUS, MIN_RADIUS, RADIUS_STEP, formatRadius } from "@/lib/categories";
+import { useUnit } from "@/lib/useUnit";
 import { NO_FILTERS, activeFilterCount, prettyCuisine, type AttrFilters, type Diet } from "@/lib/filters";
 import { OPEN_AT_PRESETS, sameOpenAt, type OpenAt } from "@/lib/openAt";
 import { formatWalk } from "@/lib/walk";
@@ -73,6 +74,7 @@ export default function FiltersPanel({
   disabled,
   children,
 }: FiltersPanelProps) {
+  const unit = useUnit();
   const [custom, setCustom] = useState(false);
   const preset = OPEN_AT_PRESETS.find((p) => sameOpenAt(p.at, openAt));
   const selected = custom || !preset ? "custom" : preset.id;
@@ -117,7 +119,7 @@ export default function FiltersPanel({
             Distance
           </label>
           <output htmlFor="radius" className="text-lg font-extrabold text-indigo-950">
-            {formatRadius(radius)}
+            {formatRadius(radius, unit)}
           </output>
         </div>
         <input
@@ -128,14 +130,14 @@ export default function FiltersPanel({
           step={RADIUS_STEP}
           value={radius}
           disabled={disabled}
-          aria-valuetext={formatRadius(radius)}
+          aria-valuetext={formatRadius(radius, unit)}
           onChange={(e) => onRadiusChange(Number(e.target.value))}
           className="mt-1 h-11 w-full cursor-pointer accent-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
         />
         <p className="text-xs text-indigo-900/70">About {formatWalk(radius)} to the edge, in a straight line</p>
         <div aria-hidden className="flex justify-between text-xs text-indigo-900/70">
-          <span>{formatRadius(MIN_RADIUS)}</span>
-          <span>{formatRadius(MAX_RADIUS)}</span>
+          <span>{formatRadius(MIN_RADIUS, unit)}</span>
+          <span>{formatRadius(MAX_RADIUS, unit)}</span>
         </div>
       </div>
 

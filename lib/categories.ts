@@ -1,4 +1,5 @@
 import type { CategoryId } from "./types";
+import { formatDistance, type Unit } from "./units";
 
 export interface Category {
   id: CategoryId;
@@ -66,6 +67,6 @@ export function snapRadius(value: number): number {
   return Math.min(MAX_RADIUS, Math.max(MIN_RADIUS, snapped));
 }
 
-export function formatRadius(meters: number): string {
-  return meters < 1000 ? `${meters} m` : `${meters / 1000} km`;
+export function formatRadius(meters: number, unit: Unit = "km"): string {
+  return formatDistance(meters, unit);
 }

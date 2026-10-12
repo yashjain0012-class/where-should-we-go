@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./dark-theme.css";
 
 :root {
   --foreground: #1e1b4b;
@@ -90,7 +91,7 @@ body {
    then keeps a gentle pulse. */
 .pin--winner {
   transform: scale(1.45);
-  border-color: #1e1b4b;
+  border-color: var(--wheel-pointer, #1e1b4b);
   animation:
     pin-bounce 0.9s cubic-bezier(0.28, 0.84, 0.42, 1) 1s backwards,
     pin-pulse 1.4s ease-out 1.9s infinite;

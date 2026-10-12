@@ -50,6 +50,14 @@ The **✏️ My own list** switch turns the wheel into a general decision spinne
 
 Custom lists share as `#c=1.<checksum>.<payload>`, where the payload is base64url JSON of `[[name, weight], ...]`. Opening one fills the editor and the wheel, with no API calls. Every link is checked for the checksum, length, weight range and name content, and a broken or tampered link falls back to the normal screen with a message.
 
+## Accessibility, dark mode and units
+
+- **Automated WCAG 2.1 A/AA checks** ([axe-core](https://github.com/dequelabs/axe-core) through `@axe-core/playwright`, `e2e/a11y.spec.ts`) run on every screen state in CI, in both themes and on desktop and phone: start screen, results, result card, filters and preferences open, custom list, vetoes, head-to-head and the live room. A self-check test makes sure the scanner really does flag a bad button and pale text. Automated checks catch contrast, names, roles and structure; they do not replace trying a screen reader.
+- **Keyboard:** everything is a real button, link, input or `<details>`, with a visible focus ring; searching, spinning (Space or Enter) and reading the result work without a mouse, and the result card sits in a polite live region so it is announced. Touch targets are at least 44 px.
+- **Reduced motion:** the spin shortens to about a second and the confetti, bounce and card animation are off.
+- **Dark mode:** the **Auto / Light / Dark** button follows the device by default and remembers a choice. A tiny script in the page head sets the theme before the first paint, so there is no flash. Rather than a `dark:` variant on every element, `scripts/gen-dark-theme.mjs` generates `app/dark-theme.css`, which mirrors each Tailwind colour scale used (50 to 950, 100 to 900, ...) and swaps white for a deep indigo, so every pairing in the design keeps its contrast; the generated file is checked into the repo and the dark theme passes the same axe checks.
+- **Units:** the **km / mi** button changes how distances are written (the slider, the labels and the messages). The default follows the device's region (miles in the US, UK, Liberia and Myanmar), a choice is remembered, and searches are always in metres underneath.
+
 ## Live room
 
 **👥 Live room** (under the Spin button) turns a wheel into a shared one, with no accounts and nothing stored:
@@ -143,6 +151,7 @@ npm run test:bracket   # head-to-head: byes, n-1 votes for any size, immutabilit
 npm run test:card      # text wrapping for the result picture, safe file names
 npm run test:motion    # shake detection (rest, one bump, real shakes, lockout) and which ticks are felt
 npm run test:room      # live-room protocol: validation of every message, room codes, veto rules
+npm run test:units     # km and mi formatting, default unit by region
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -174,6 +183,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/share.ts`: share-link encode, decode and validation
 - `app/manifest.ts`, `public/sw.js`, `lib/iconArt.tsx`, `lib/lastWheel.ts`, `components/OfflineBanner.tsx`: installable app and offline support
 - `lib/resultCard.ts`, `lib/textWrap.ts`, `components/ShareCardButton.tsx`: the shareable result picture
+- `lib/theme.ts`, `scripts/gen-dark-theme.mjs`, `app/dark-theme.css`, `lib/units.ts`: dark mode and units
 - `lib/room.ts`, `lib/roomPeer.ts`, `lib/useRoom.ts`, `components/RoomPanel.tsx`, `app/api/peer-config`: live rooms
 - `lib/motion.ts`: vibration, shake detection and the 📳 switch
 - `lib/bracket.ts`, `components/Duel.tsx`, `components/VetoRound.tsx`: head-to-head tournament and pass-the-phone vetoes

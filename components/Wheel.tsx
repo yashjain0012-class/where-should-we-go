@@ -70,7 +70,7 @@ export default function Wheel({ places, weights, rotation, spinning, durationMs,
           height: 0,
           borderLeft: "14px solid transparent",
           borderRight: "14px solid transparent",
-          borderTop: "26px solid #1e1b4b",
+          borderTop: "26px solid var(--wheel-pointer, #1e1b4b)",
           filter: "drop-shadow(0 2px 2px rgba(0,0,0,.35))",
         }}
       />
@@ -125,7 +125,7 @@ export default function Wheel({ places, weights, rotation, spinning, durationMs,
                   <path
                     d={slicePath(edges[i], edges[i + 1])}
                     fill={SLICE_COLORS[i % SLICE_COLORS.length]}
-                    stroke={isWinner ? "#1e1b4b" : "#fff"}
+                    style={{ stroke: isWinner ? "var(--wheel-pointer, #1e1b4b)" : "#fff" }}
                     strokeWidth={isWinner ? 2.5 : 1}
                     strokeLinejoin="round"
                   />
@@ -147,7 +147,7 @@ export default function Wheel({ places, weights, rotation, spinning, durationMs,
               </g>
             );
           })}
-          <circle cx={CX} cy={CY} r="9" fill="#fff" stroke="#1e1b4b" strokeWidth="2" />
+          <circle cx={CX} cy={CY} r="9" fill="#fff" strokeWidth="2" style={{ stroke: "var(--wheel-pointer, #1e1b4b)" }} />
         </svg>
       </div>
     </div>

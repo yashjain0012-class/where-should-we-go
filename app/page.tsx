@@ -10,6 +10,8 @@ import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
 import RoomPanel from "@/components/RoomPanel";
 import ShareCardButton from "@/components/ShareCardButton";
+import ThemeToggle from "@/components/ThemeToggle";
+import UnitToggle from "@/components/UnitToggle";
 import ResultActions from "@/components/ResultActions";
 import VetoRound from "@/components/VetoRound";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
@@ -33,6 +35,8 @@ import { describeOpenAt } from "@/lib/openAt";
 import { saveLastWheel } from "@/lib/lastWheel";
 import { parseRoomHash, type RoomOption, type RoomState } from "@/lib/room";
 import { useRoom } from "@/lib/useRoom";
+import { useUnit } from "@/lib/useUnit";
+import { getUnit } from "@/lib/units";
 import { mapsUrl } from "@/lib/maps";
 import {
   confirmBuzz, getMotion, landingBuzz, listenForShake, motionSupported, requestMotionPermission, setMotion, startHaptics,
@@ -177,6 +181,7 @@ export default function Home() {
 
   // Favourites, hidden places and recent winners, remembered in this browser. Empty for the server render.
   const prefs = useSyncExternalStore(subscribePrefs, getPrefs, getServerPrefs);
+  const unit = useUnit();
 
   // Sound on/off, remembered between visits. Always "on" for the server render.
   const muted = useSyncExternalStore(subscribeMuted, getMuted, () => false);
@@ -390,7 +395,7 @@ export default function Home() {
       setShareNote(null);
       setShareFallbackUrl(null);
       const id = ++requestId.current;
-      setLoading(`Finding places within ${formatRadius(rad)}… busy free servers can take up to 30 seconds.`);
+      setLoading(`Finding places within ${formatRadius(rad, getUnit())}… busy free servers can take up to 30 seconds.`);
       setError(null);
       setCanRetry(false);
       setNotice(null);
@@ -876,10 +881,10 @@ export default function Home() {
   const widerRadius = snapRadius(Math.min(MAX_RADIUS, shownRadius * 2));
   const fewMessage =
     candidates.length === 0
-      ? `Nothing found within ${formatRadius(shownRadius)}. A wider radius or another category might help.`
+      ? `Nothing found within ${formatRadius(shownRadius, unit)}. A wider radius or another category might help.`
       : `${
           fetched.length === 0 ? "No places match" : "Only 1 place matches"
-        } these filters within ${formatRadius(shownRadius)}. Try a wider radius${
+        } these filters within ${formatRadius(shownRadius, unit)}. Try a wider radius${
           openNow ? " or show closed places too" : ""
         }${activeFilterCount(filters) ? ", or clear the cuisine and dietary filters" : ""}.`;
   // With "Open now" on, anything not confirmed open has no usable hours.
@@ -897,6 +902,11 @@ export default function Home() {
         sharedMode && !editing ? "gap-3 py-4" : "gap-6 py-8"
       }`}
     >
+      <div className="-mb-3 flex justify-end gap-2">
+        <UnitToggle />
+        <ThemeToggle />
+      </div>
+
       <header className="text-center">
         <h1
           className={`font-extrabold tracking-tight text-indigo-950 sm:text-5xl ${
@@ -1104,7 +1114,7 @@ export default function Home() {
               className="flex flex-col gap-2 rounded-xl bg-amber-100 p-3 text-sm text-amber-950"
             >
               <p>
-                {notice.text} Your previous {formatRadius(shownRadius)} results are still on the wheel.
+                {notice.text} Your previous {formatRadius(shownRadius, unit)} results are still on the wheel.
               </p>
               <div className="flex flex-wrap gap-2">
                 {notice.retryRadius && (
@@ -1113,7 +1123,7 @@ export default function Home() {
                     onClick={() => commitRadius(notice.retryRadius!)}
                     className="min-h-11 rounded-xl bg-amber-800 px-4 font-semibold text-white hover:bg-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-800"
                   >
-                    Try {formatRadius(notice.retryRadius)}
+                    Try {formatRadius(notice.retryRadius, unit)}
                   </button>
                 )}
                 <button
@@ -1160,7 +1170,7 @@ export default function Home() {
             type="button"
             onClick={handleSpin}
             disabled={!canSpin}
-            className="rounded-full bg-gradient-to-r from-pink-500 via-orange-500 to-yellow-400 px-12 py-4 text-xl font-extrabold text-white shadow-lg transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+            className="whitespace-nowrap rounded-full bg-gradient-to-r from-pink-500 via-orange-500 to-yellow-400 px-8 py-4 text-xl sm:px-12 font-extrabold text-white shadow-lg transition hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pink-600 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
           >
             {spinning ? "Spinning…" : winner ? "Spin again" : "Spin!"}
           </button>
@@ -1321,7 +1331,7 @@ export default function Home() {
                   disabled={spinning}
                   className="min-h-11 rounded-xl bg-indigo-600 px-4 font-semibold text-white shadow hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50"
                 >
-                  Widen to {formatRadius(widerRadius)}
+                  Widen to {formatRadius(widerRadius, unit)}
                 </button>
               )}
               {openNow && (
@@ -1457,12 +1467,12 @@ export default function Home() {
                   </span>
                   <span className="max-w-[12rem] truncate">{p.name}</span>
                   {p.distance !== undefined && (
-                    <span title={formatWalk(p.distance)} className="shrink-0 text-[11px] text-slate-500">
+                    <span title={formatWalk(p.distance)} className="shrink-0 text-[11px] text-slate-600">
                       {walkMinutes(p.distance)} min
                     </span>
                   )}
                   {p.attrs?.cuisine?.[0] && (
-                    <span className="hidden shrink-0 text-[11px] text-slate-500 sm:inline">{prettyCuisine(p.attrs.cuisine[0])}</span>
+                    <span className="hidden shrink-0 text-[11px] text-slate-600 sm:inline">{prettyCuisine(p.attrs.cuisine[0])}</span>
                   )}
                   {activeFilterCount(filters) > 0 && matchOf(p, filters) === "unknown" && (
                     <span

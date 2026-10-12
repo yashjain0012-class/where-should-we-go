@@ -16,6 +16,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: `http://localhost:${PORT}`,
+    locale: "en-IN", // distances default to km here; the units tests set their own locale
     trace: "retain-on-failure",
     reducedMotion: "reduce", // a 1.2 s spin instead of 5 s; individual tests turn it off when they check the animation
     // Two pages on one machine find each other with their real network addresses, not hidden ".local" names.
