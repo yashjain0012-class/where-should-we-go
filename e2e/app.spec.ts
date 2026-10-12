@@ -671,6 +671,113 @@ test.describe("result picture", () => {
   });
 });
 
+test.describe("vibration and shake to spin", () => {
+  /** Records every navigator.vibrate call, and lets a test shake the "phone". */
+  const install = (page: import("@playwright/test").Page, permission: "granted" | "denied" = "granted") =>
+    page.addInitScript((answer) => {
+      const w = window as unknown as { __buzz: (number | number[])[] };
+      w.__buzz = [];
+      // iPhones (and recent Chrome) ask for motion access first.
+      Object.defineProperty(window.DeviceMotionEvent, "requestPermission", { value: async () => answer, configurable: true });
+      Object.defineProperty(navigator, "vibrate", {
+        value: (pattern: number | number[]) => {
+          w.__buzz.push(pattern);
+          return true;
+        },
+        configurable: true,
+      });
+    }, permission);
+  const buzzes = (page: import("@playwright/test").Page) =>
+    page.evaluate(() => (window as unknown as { __buzz: (number | number[])[] }).__buzz);
+  const shake = (page: import("@playwright/test").Page, jolts = 3) =>
+    page.evaluate(async (n) => {
+      for (let i = 0; i < n; i++) {
+        const e = new Event("devicemotion") as Event & { accelerationIncludingGravity: { x: number; y: number; z: number } };
+        e.accelerationIncludingGravity = { x: 28, y: 12, z: 5 };
+        window.dispatchEvent(e);
+        await new Promise((r) => setTimeout(r, 160));
+      }
+    }, jolts);
+
+  test("the switch is only offered on touch devices", async ({ page, isMobile }) => {
+    await openApp(page);
+    await search(page);
+    await expect(page.getByRole("button", { name: "Vibrate and shake to spin" })).toHaveCount(isMobile ? 1 : 0);
+  });
+
+  test("shaking spins the wheel once it is switched on, not before", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "needs a touch device");
+    await install(page);
+    await openApp(page);
+    await search(page);
+    await shake(page);
+    await page.waitForTimeout(400);
+    await expect(spinButton(page)).toHaveText("Spin!"); // not switched on: nothing happened
+
+    const toggle = page.getByRole("button", { name: "Vibrate and shake to spin" });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText(/Shake your phone to spin/)).toBeVisible();
+    expect(await buzzes(page)).toContain(30); // switching on is felt
+
+    await shake(page);
+    await expect(spinButton(page)).toHaveText("Spinning…");
+    await expect(page.locator(".result-pop")).toBeVisible({ timeout: 9000 });
+    const buzz = await buzzes(page);
+    expect(buzz.filter((b) => b === 14).length).toBeGreaterThan(4); // a pulse for the slowing ticks
+    expect(buzz).toContainEqual([40, 50, 40, 50, 90]); // and a buzz on landing
+  });
+
+  test("if motion access is refused, the switch stays off and says why", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "needs a touch device");
+    await install(page, "denied");
+    await openApp(page);
+    await search(page);
+    const toggle = page.getByRole("button", { name: "Vibrate and shake to spin" });
+    await toggle.click();
+    await expect(page.getByText(/Motion access was denied/)).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await shake(page);
+    await page.waitForTimeout(300);
+    await expect(spinButton(page)).toHaveText("Spin!");
+  });
+
+  test("one bump is not a shake, and shaking does nothing while a spin is under way or a helper is open", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "needs a touch device");
+    await install(page);
+    await openApp(page);
+    await search(page);
+    await page.getByRole("button", { name: "Vibrate and shake to spin" }).click();
+    await shake(page, 1);
+    await page.waitForTimeout(300);
+    await expect(spinButton(page)).toHaveText("Spin!");
+
+    await page.getByRole("button", { name: /Take turns vetoing/ }).click();
+    await shake(page);
+    await page.waitForTimeout(300);
+    await expect(page.getByRole("region", { name: "Take turns vetoing" })).toBeVisible();
+    await expect(spinButton(page)).toBeDisabled();
+  });
+
+  test("switching it off stops both, and the choice is remembered", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "needs a touch device");
+    await install(page);
+    await openApp(page);
+    await search(page);
+    const toggle = page.getByRole("button", { name: "Vibrate and shake to spin" });
+    await toggle.click();
+    await page.reload();
+    await page.waitForSelector("body[data-hydrated=true]");
+    await search(page);
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await toggle.click();
+    await expect(page.getByText(/are off/)).toBeVisible();
+    await shake(page);
+    await page.waitForTimeout(300);
+    await expect(spinButton(page)).toHaveText("Spin!");
+  });
+});
+
 test.describe("sharing", () => {
   test("a copied link opens the same wheel in a fresh page without searching again", async ({ page, context }) => {
     await openApp(page);

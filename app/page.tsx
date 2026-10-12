@@ -31,6 +31,10 @@ import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
 import { describeOpenAt } from "@/lib/openAt";
 import { saveLastWheel } from "@/lib/lastWheel";
 import { mapsUrl } from "@/lib/maps";
+import {
+  confirmBuzz, getMotion, landingBuzz, listenForShake, motionSupported, requestMotionPermission, setMotion, startHaptics,
+  stopHaptics, subscribeMotion,
+} from "@/lib/motion";
 import { decodeShare, encodeShare } from "@/lib/share";
 import { getMuted, playTicks, setMuted, stopTicks, subscribeMuted, unlockAudio } from "@/lib/sound";
 import {
@@ -173,6 +177,12 @@ export default function Home() {
   // Sound on/off, remembered between visits. Always "on" for the server render.
   const muted = useSyncExternalStore(subscribeMuted, getMuted, () => false);
 
+  // Vibration and shake-to-spin: one switch, off by default, offered only on touch devices that can do it.
+  const motionOn = useSyncExternalStore(subscribeMotion, getMotion, () => false);
+  const canMotion = useSyncExternalStore(() => () => {}, motionSupported, () => false);
+  const [motionNote, setMotionNote] = useState<string | null>(null);
+  const spinIfPossible = useRef<() => void>(() => {});
+
   const requestId = useRef(0);
   // The wheel's current rotation, mirrored so handleSpin can read it synchronously.
   const rotationRef = useRef(0);
@@ -208,6 +218,7 @@ export default function Home() {
       if (noteTimer.current) clearTimeout(noteTimer.current);
       if (radiusTimer.current) clearTimeout(radiusTimer.current);
       stopTicks();
+      stopHaptics();
       stopConfetti();
     },
     [],
@@ -293,6 +304,17 @@ export default function Home() {
     window.addEventListener("hashchange", openSharedLink);
     return () => window.removeEventListener("hashchange", openSharedLink);
   }, []);
+
+  // Always call the latest handler (it sees current state) from the shake listener.
+  useEffect(() => {
+    spinIfPossible.current = () => {
+      if (canSpin) handleSpin();
+    };
+  });
+  useEffect(() => {
+    if (!motionOn || !canMotion) return;
+    return listenForShake(() => spinIfPossible.current());
+  }, [motionOn, canMotion]);
 
   // Keep the wheel that is on screen as a share link, so it can be opened again with no connection.
   useEffect(() => {
@@ -496,6 +518,23 @@ export default function Home() {
     setLoading(null);
   }
 
+  // Turning the switch on asks for motion access where the device requires it (iPhones, from a tap).
+  async function handleMotion() {
+    if (motionOn) {
+      setMotion(false);
+      setMotionNote("Vibration and shake-to-spin are off.");
+      return;
+    }
+    const allowed = await requestMotionPermission();
+    if (!allowed) {
+      setMotionNote("Motion access was denied, so shake-to-spin can't work. You can allow it in the browser's site settings.");
+      return;
+    }
+    setMotion(true);
+    confirmBuzz();
+    setMotionNote("Shake your phone to spin. The wheel vibrates as it slows down.");
+  }
+
   // Switch between searching for places and typing your own list. The places wheel is kept for when you come back.
   function handleMode(next: "places" | "custom") {
     if (spinning || next === mode) return;
@@ -550,10 +589,13 @@ export default function Home() {
     setSpinning(true);
     // Schedule the ticks now, inside the tap (browsers only allow audio after a tap), from
     // the same curve the wheel animates with so they slow down together.
-    playTicks(tickTimes(from, to, sliceEdges(weights), ms), ms / 1000);
+    const times = tickTimes(from, to, sliceEdges(weights), ms);
+    playTicks(times, ms / 1000);
+    if (getMotion()) startHaptics(times);
     spinTimer.current = setTimeout(() => {
       setSpinning(false);
       setWinner(chosen);
+      if (getMotion()) landingBuzz();
       if (!sharedMode && !customMode) recordWinner(chosen); // shared wheels have throwaway ids, so they are not remembered
       celebrate();
     }, ms + 60);
@@ -973,7 +1015,25 @@ export default function Home() {
           >
             <span aria-hidden>{muted ? "🔇" : "🔊"}</span>
           </button>
+          {canMotion && (
+            <button
+              type="button"
+              onClick={() => void handleMotion()}
+              aria-pressed={motionOn}
+              aria-label="Vibrate and shake to spin"
+              title={motionOn ? "Vibration and shake-to-spin are on" : "Turn on vibration and shake-to-spin"}
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl shadow ring-1 transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${
+                motionOn ? "bg-indigo-950 text-white ring-indigo-950" : "bg-white ring-indigo-100 hover:bg-indigo-50"
+              }`}
+            >
+              <span aria-hidden>📳</span>
+            </button>
+          )}
         </div>
+
+        <p aria-live="polite" className={motionNote ? "-mt-3 max-w-md text-center text-sm text-indigo-900" : "sr-only"}>
+          {motionNote}
+        </p>
 
         {options.length >= 2 && !spinning && helper === "none" && (
           <div className="flex flex-wrap justify-center gap-2">
