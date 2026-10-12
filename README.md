@@ -1,14 +1,60 @@
 # Where should we go? 🎡
 
-A one-page decision spinner. Type a neighbourhood or city (or tap "Use my location"), pick a category (restaurants, cafés, bars, things to do), and spin a wheel of up to 8 places within 1 km. The wheel lands on one and shows its name with a Google Maps link. You can remove options before spinning.
+A decision spinner for groups. Search a neighbourhood (or use your location), pick restaurants, cafés, bars or things to do, and spin a wheel of the nearest places; or spin **your own list** for anything. It also does head-to-head knockouts, pass-the-phone vetoes and **live rooms** where friends join from their own phones.
 
-No login, no database, no paid APIs or keys. Uses free OpenStreetMap services:
+**No login, no database, no paid APIs or keys.** Everything runs in the browser or through thin proxies to free services (OpenStreetMap's Nominatim and Overpass for places, Open-Meteo for weather, PeerJS's public broker to introduce devices in a live room).
 
-- **Nominatim** turns the typed location into coordinates (`/api/geocode`)
-- **Overpass** finds named places within your chosen distance, 500 m to 5 km (`/api/places`)
-- **OpenStreetMap tiles + Leaflet** draw the map
+- Try it in 6 minutes: [docs/DEMO.md](docs/DEMO.md)
+- Why it is built this way: [docs/DECISIONS.md](docs/DECISIONS.md)
 
-Both APIs are called through Next.js route handlers so a proper `User-Agent` is sent, results are cached, and several Overpass mirrors are raced for reliability.
+## What it does
+
+| Area | Features |
+| --- | --- |
+| **Discovery** | Search by place or GPS; 4 categories; distance 500 m to 5 km; **Open now / Open at** (on the place's own clock); cuisine, vegetarian/vegan, outdoor seating, wheelchair, takeaway filters (untagged places kept and labelled); walking time; weather chip and **indoor-first when it rains** |
+| **Personal** (no account) | ⭐ favourites (a slice twice as big), 🚫 never show again, winner history with "skip places that won in the last N days", clear-my-data |
+| **Group** | **Live room** (peer-to-peer; guests veto, the host's spin lands the same everywhere), pass-the-phone vetoes, head-to-head tournament, **your own weighted list**, share-by-link |
+| **Result** | Directions (Google, Apple, OpenStreetMap), add to calendar (`.ics`), share as a picture |
+| **Feel** | Synthesized ticking sound that slows with the wheel, confetti, map with matching pins, vibration and shake-to-spin on phones, reduced-motion support |
+| **App** | Installable PWA, opens offline with the last wheel, dark mode, **English and Hindi**, km or miles, WCAG 2.1 AA checked in CI |
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    UI[Next.js page and components]
+    Logic[lib: spin, ticks, filters, hours, bracket, room protocol]
+    Store[(localStorage: favourites, history, settings, last wheel)]
+    SW[Service worker: offline shell]
+    UI --- Logic
+    UI --- Store
+    UI --- SW
+  end
+  subgraph Server["Next.js route handlers (Vercel)"]
+    G["/api/geocode"]
+    P["/api/places"]
+    W["/api/weather"]
+    C["/api/peer-config"]
+  end
+  UI --> G --> Nominatim[(Nominatim)]
+  UI --> P --> Overpass[(Overpass mirrors)]
+  UI --> W --> Meteo[(Open-Meteo)]
+  UI -.-> C
+  UI <-->|WebRTC data channel| Peer[Friend's browser]
+  UI -.->|introductions only| Broker[(PeerJS public broker)]
+  UI --> Tiles[(OSM map tiles)]
+```
+
+The pure logic (spinning, tick timing, filters, opening hours, the bracket, the room protocol, the Hindi dictionary check) lives in `lib/` with no React and no network, and is tested on its own. Components in `components/` are thin; `app/page.tsx` ties them together.
+
+## Privacy
+
+- **Nothing is stored on a server of ours, and there are no accounts, cookies or analytics.** Favourites, hidden places, history, settings and the last wheel live in this browser's `localStorage`. "Clear my data" removes them.
+- **Locations:** when you search or use GPS, the coordinates go to our route handlers, which round them (about 110 m for places, 1 km for weather) before asking the public services. Share links snap the search centre to about 110 m, so a link made from "Use my location" does not reveal where you are.
+- **Share links** hold only place names, positions and weights, in the URL fragment, which browsers do not send to servers.
+- **Live rooms** are device to device. The public broker and a STUN server see the room code and the devices' network addresses (as in any video call), never the wheel or the votes.
+- Third parties that see a request from your browser: OpenStreetMap's tile servers (map images), and, in a room, the PeerJS broker. Map tiles carry the usual OpenStreetMap attribution.
 
 ## Filters
 
@@ -168,11 +214,11 @@ npm run build        # production build (also catches browser-only code running 
 ## Tests and CI
 
 ```bash
-npm run test:unit   # share links, filters + opening hours (across time zones), tick timing
+npm run test:unit   # every pure module: over 220 checks (see the list under Develop)
 npm run e2e         # builds, then runs the Playwright suite on a desktop and a phone profile
 ```
 
-The end-to-end suite (`e2e/`) drives the real production build in Chromium with the OpenStreetMap services **mocked**, so it is fast, offline and deterministic. It covers search and categories, spinning (the result must be the slice under the pointer), removing options, the distance slider and Open now, a big-radius timeout, the "too few results" path, a share-link round trip in a fresh page (with no new searches), a broken link, ticking sound and mute, and confetti versus reduced motion.
+The end-to-end suite (`e2e/`, 154 runs across a desktop and a Pixel 7 profile) drives the real production build in Chromium with the OpenStreetMap and weather services **mocked** (so it is fast, offline and deterministic) and a **local PeerJS server** for live rooms. It covers search and categories, spinning (the result must be the slice under the pointer, including uneven slices), every filter, favourites and history, custom lists and share links (valid, broken and tampered), vetoes and head-to-head, two-browser live rooms, the installable manifest and offline reopening, the result picture, vibration and shake, dark mode, km and miles, Hindi, and automated WCAG 2.1 AA checks with axe-core on every screen state in both themes.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, lint, the unit tests, a production build and the end-to-end suite on every push and pull request.
 
