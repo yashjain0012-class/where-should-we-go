@@ -50,6 +50,23 @@ The **✏️ My own list** switch turns the wheel into a general decision spinne
 
 Custom lists share as `#c=1.<checksum>.<payload>`, where the payload is base64url JSON of `[[name, weight], ...]`. Opening one fills the editor and the wheel, with no API calls. Every link is checked for the checksum, length, weight range and name content, and a broken or tampered link falls back to the normal screen with a message.
 
+## Live room
+
+**👥 Live room** (under the Spin button) turns a wheel into a shared one, with no accounts and nothing stored:
+
+- The host gets a link like `/#r=k3m9qa`. Friends who open it see the same wheel, with its weights, update as the host edits it, and can **veto one option each** (never below two options). They cannot edit or spin it.
+- **The host's device does the spin**, and tells everyone which option it will stop on, so every screen lands on the same result (each guest runs the animation and ticking at their own pace, and a guest with reduced motion gets the short version). Guests see names, not places or map links.
+- The count of people updates as they join and leave. The host ending the room (or closing the page) lets guests keep the wheel as an ordinary custom list.
+
+How it works: [PeerJS](https://peerjs.com/) (WebRTC). A free public "broker" (`0.peerjs.com`) only introduces the devices to each other, using the room code; the wheel and the votes then go **directly between the devices**, and there is no server of ours in the path. `lib/room.ts` is the protocol (message shapes, strict validation of everything received, room-code and veto rules, all unit tested), `lib/roomPeer.ts` is the PeerJS side (loaded only when a room is opened), and `lib/useRoom.ts` ties them to the page. Room codes come from `crypto.getRandomValues` (6 characters from a 31-letter alphabet without look-alikes).
+
+Honest limits:
+
+- It depends on a free public service with no guarantees. If it is down, or a network blocks direct device-to-device connections (some corporate and campus networks do), joining fails after about 12 seconds with a clear message, and **"Copy link" for an ordinary shared wheel still works** as the fallback (each friend then spins on their own).
+- The broker and the STUN server can see the room code and the devices' network addresses (as with any video call), but not the wheel or votes.
+- Rooms hold up to 12 guests. A guest whose connection drops silently can take up to about 30 seconds to disappear from the count (closing the tab is immediate).
+- To use your own broker, run a [PeerJS server](https://github.com/peers/peerjs-server) and set `PEER_HOST` (and optionally `PEER_PORT`, `PEER_PATH`, `PEER_SECURE`) on the server. `/api/peer-config` reads them on each request, so no rebuild is needed. The end-to-end tests do exactly this with a local server (`scripts/peer-server.mjs`), so they never depend on the public one.
+
 ## Deciding together
 
 Two helpers sit under the Spin button (and work on any wheel, places or your own list):
@@ -125,6 +142,7 @@ npm run test:custom    # custom lists: parsing, weights, limits, share links (va
 npm run test:bracket   # head-to-head: byes, n-1 votes for any size, immutability, every option can win
 npm run test:card      # text wrapping for the result picture, safe file names
 npm run test:motion    # shake detection (rest, one bump, real shakes, lockout) and which ticks are felt
+npm run test:room      # live-room protocol: validation of every message, room codes, veto rules
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -156,6 +174,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/share.ts`: share-link encode, decode and validation
 - `app/manifest.ts`, `public/sw.js`, `lib/iconArt.tsx`, `lib/lastWheel.ts`, `components/OfflineBanner.tsx`: installable app and offline support
 - `lib/resultCard.ts`, `lib/textWrap.ts`, `components/ShareCardButton.tsx`: the shareable result picture
+- `lib/room.ts`, `lib/roomPeer.ts`, `lib/useRoom.ts`, `components/RoomPanel.tsx`, `app/api/peer-config`: live rooms
 - `lib/motion.ts`: vibration, shake detection and the 📳 switch
 - `lib/bracket.ts`, `components/Duel.tsx`, `components/VetoRound.tsx`: head-to-head tournament and pass-the-phone vetoes
 - `lib/custom.ts`, `components/CustomEditor.tsx`: the "My own list" mode and its share links

@@ -10,7 +10,8 @@
     "test:share": "tsc lib/share.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-share.mjs",
     "test:filters": "tsc lib/overpass.ts lib/hours.ts lib/openAt.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-filters.mjs",
     "test:ticks": "tsc lib/ticks.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-ticks.mjs",
-    "test:unit": "npm run test:share && npm run test:filters && npm run test:attrs && npm run test:links && npm run test:weather && npm run test:ticks && npm run test:spin && npm run test:prefs && npm run test:custom && npm run test:bracket && npm run test:card && npm run test:motion",
+    "test:unit": "npm run test:share && npm run test:filters && npm run test:attrs && npm run test:links && npm run test:weather && npm run test:ticks && npm run test:spin && npm run test:prefs && npm run test:custom && npm run test:bracket && npm run test:card && npm run test:motion && npm run test:room",
+    "test:room": "tsc lib/room.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-room.mjs",
     "test:motion": "tsc lib/motion.ts lib/ticks.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-motion.mjs",
     "test:card": "tsc lib/resultCard.ts lib/textWrap.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-card.mjs",
     "test:bracket": "tsc lib/bracket.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-bracket.mjs",
@@ -18,6 +19,7 @@
     "test:spin": "tsc lib/spin.ts lib/ticks.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-spin.mjs",
     "test:prefs": "tsc lib/prefs.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-prefs.mjs",
     "e2e": "npm run build && playwright test",
+    "peer-server": "node scripts/peer-server.mjs",
     "test:attrs": "tsc lib/overpass.ts lib/filters.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict --moduleResolution node10 && node scripts/test-attrs.mjs",
     "test:links": "tsc lib/walk.ts lib/directions.ts lib/calendar.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-links.mjs",
     "test:weather": "tsc lib/weather.ts --outDir .test-build --module commonjs --target es2022 --lib es2022,dom --skipLibCheck --strict && node scripts/test-weather.mjs"
@@ -28,6 +30,7 @@
     "leaflet": "^1.9.4",
     "next": "16.3.7",
     "opening_hours": "^3.15.0",
+    "peerjs": "^1.5.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tz-lookup": "^6.1.25"
@@ -42,6 +45,7 @@
     "@types/tz-lookup": "^6.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.7",
+    "peer": "^1.0.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

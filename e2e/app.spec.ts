@@ -778,6 +778,121 @@ test.describe("vibration and shake to spin", () => {
   });
 });
 
+test.describe("live room", () => {
+  type P = import("@playwright/test").Page;
+  const startRoom = async (host: P) => {
+    await host.getByRole("button", { name: /Live room/ }).click();
+    const input = host.getByLabel("Room link");
+    await expect(input).toBeVisible();
+    return input.inputValue();
+  };
+  const join = async (context: import("@playwright/test").BrowserContext, link: string) => {
+    const guest = await context.newPage();
+    await mockApis(guest);
+    await guest.goto(link);
+    await guest.waitForSelector("body[data-hydrated=true]");
+    return guest;
+  };
+
+  test("a friend joins, sees the same wheel, vetoes once, and watches the host's spin land on the same result", async ({ page, context }) => {
+    await openApp(page);
+    await search(page);
+    const names = await optionNames(page);
+    const link = await startRoom(page);
+    expect(link).toMatch(/#r=[a-z2-9]{6}$/);
+
+    const guest = await join(context, link);
+    await expect(guest.getByText(/2 people here/)).toBeVisible();
+    await expect(page.getByText(/2 people here/)).toBeVisible();
+    expect(await optionNames(guest)).toEqual(names);
+    await expect(removeButtons(guest)).toHaveCount(0); // a guest cannot edit the wheel
+    await expect(guest.getByRole("button", { name: /^Spin/ })).toHaveCount(0); // or spin it
+    await expect(guest.getByText("Waiting for the host to spin…")).toBeVisible();
+
+    await guest.getByRole("button", { name: `Veto ${names[1]}` }).click();
+    const remaining = names.filter((n) => n !== names[1]);
+    await expect(removeButtons(page)).toHaveCount(7); // gone for the host...
+    await expect.poll(() => optionNames(guest)).toEqual(remaining); // ...and for the guest
+    expect(await optionNames(page)).toEqual(remaining);
+    await expect(guest.getByRole("button", { name: /^Veto / })).toHaveCount(0); // one each
+
+    const winner = await spinAndWait(page);
+    const card = guest.locator(".result-pop");
+    await expect(card).toBeVisible({ timeout: 9000 });
+    await expect(card.locator("p.text-2xl")).toHaveText(winner);
+    expect(await optionUnderPointer(guest)).toBe(winner);
+    await expect(card.getByRole("link", { name: /Google Maps/ })).toHaveCount(0); // guests get names, not places
+
+    await page.getByRole("button", { name: "End room" }).click();
+    await expect(guest.getByText("The host ended the room.")).toBeVisible();
+    await guest.getByRole("button", { name: "Keep this wheel" }).click();
+    await expect(guest.getByLabel("Your options")).toHaveValue(remaining.join("\n"));
+    await expect(guest.getByRole("button", { name: /^Spin/ })).toBeEnabled();
+  });
+
+  test("when the host changes the wheel, guests see it; a second guest joins and is counted", async ({ page, context }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await page.getByLabel("Your options").fill("Pizza\nTacos x3\nSushi\nRamen");
+    await page.getByRole("button", { name: /^Put on the wheel/ }).click();
+    const link = await startRoom(page);
+    const one = await join(context, link);
+    await expect.poll(() => optionNames(one)).toEqual(["Pizza", "Tacos", "Sushi", "Ramen"]);
+    await expect(removeButtons(one)).toHaveCount(0);
+    const angles = await sliceAngles(one);
+    expect(angles[1]).toBeCloseTo(3 * angles[0], 0); // the weights came across
+
+    await page.getByRole("button", { name: "Remove Sushi" }).click();
+    await expect.poll(() => optionNames(one)).toEqual(["Pizza", "Tacos", "Ramen"]);
+
+    const two = await join(context, link);
+    await expect(page.getByText(/3 people here/)).toBeVisible();
+    await expect(one.getByText(/3 people here/)).toBeVisible();
+    await expect(two.getByText(/3 people here/)).toBeVisible();
+
+    await two.goto("about:blank"); // leaving the page says goodbye to the room
+    await expect(page.getByText(/2 people here/)).toBeVisible();
+  });
+
+  test("vetoes never leave fewer than two options, and each guest gets one", async ({ page, context }) => {
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await page.getByLabel("Your options").fill("A\nB\nC");
+    await page.getByRole("button", { name: /^Put on the wheel/ }).click();
+    const link = await startRoom(page);
+    const one = await join(context, link);
+    const two = await join(context, link);
+    await expect(two.getByText(/3 people here/)).toBeVisible();
+    await one.getByRole("button", { name: "Veto A" }).click();
+    await expect.poll(() => optionNames(two)).toEqual(["B", "C"]);
+    await expect(two.getByRole("button", { name: /^Veto / })).toHaveCount(0); // two options left: no more vetoes
+    await expect(removeButtons(page)).toHaveCount(2);
+  });
+
+  test("a room that does not exist says so", async ({ page }) => {
+    await openApp(page, "/#r=abcdef");
+    await expect(page.getByRole("alert").filter({ hasText: "doesn't exist" })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByLabel("Neighbourhood or city")).toBeVisible();
+  });
+
+  test("a malformed room link is treated like any broken link", async ({ page }) => {
+    await openApp(page, "/#r=zzz");
+    await expect(page.getByRole("alert").filter({ hasText: "looks broken" })).toBeVisible();
+  });
+
+  test("a guest who leaves goes back to the normal screen", async ({ page, context }) => {
+    await openApp(page);
+    await search(page);
+    const link = await startRoom(page);
+    const guest = await join(context, link);
+    await expect(guest.getByText(/2 people here/)).toBeVisible();
+    await guest.getByRole("button", { name: "Leave" }).click();
+    await expect(guest.getByLabel("Neighbourhood or city")).toBeVisible();
+    await expect(page.getByText(/1 person here/)).toBeVisible();
+  });
+});
+
 test.describe("sharing", () => {
   test("a copied link opens the same wheel in a fresh page without searching again", async ({ page, context }) => {
     await openApp(page);

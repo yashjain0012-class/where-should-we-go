@@ -8,6 +8,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
 import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
+import RoomPanel from "@/components/RoomPanel";
 import ShareCardButton from "@/components/ShareCardButton";
 import ResultActions from "@/components/ResultActions";
 import VetoRound from "@/components/VetoRound";
@@ -30,6 +31,8 @@ import {
 import { openStates, wallClockFor, type OpenAt } from "@/lib/hours";
 import { describeOpenAt } from "@/lib/openAt";
 import { saveLastWheel } from "@/lib/lastWheel";
+import { parseRoomHash, type RoomOption, type RoomState } from "@/lib/room";
+import { useRoom } from "@/lib/useRoom";
 import { mapsUrl } from "@/lib/maps";
 import {
   confirmBuzz, getMotion, landingBuzz, listenForShake, motionSupported, requestMotionPermission, setMotion, startHaptics,
@@ -64,7 +67,8 @@ const CUSTOM_HASH = "#c=";
 
 /** Drop a share hash from the address bar so a reload doesn't restore an old shared wheel. */
 function clearShareHash() {
-  if (window.location.hash.startsWith(SHARE_HASH) || window.location.hash.startsWith(CUSTOM_HASH)) {
+  const hash = window.location.hash;
+  if (hash.startsWith(SHARE_HASH) || hash.startsWith(CUSTOM_HASH) || hash.startsWith("#r=")) {
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 }
@@ -183,6 +187,23 @@ export default function Home() {
   const [motionNote, setMotionNote] = useState<string | null>(null);
   const spinIfPossible = useRef<() => void>(() => {});
 
+  // Live rooms: the hook owns the connection; these thin wrappers call the page's newest handlers (set in an effect below).
+  const roomHandlers = useRef<{
+    getOptions(): RoomOption[];
+    onGuestVeto(id: string): void;
+    onState(state: RoomState): void;
+    onSpin(winnerId: string, ms: number): void;
+  } | null>(null);
+  const { room, startHost, startGuest, publish, broadcastSpin, veto: sendVeto, leave: leaveRoom } = useRoom({
+    getOptions: () => roomHandlers.current?.getOptions() ?? [],
+    onGuestVeto: (id) => roomHandlers.current?.onGuestVeto(id),
+    onState: (state) => roomHandlers.current?.onState(state),
+    onSpin: (winnerId, ms) => roomHandlers.current?.onSpin(winnerId, ms),
+  });
+  const guestIds = useRef<string[]>([]); // a guest's option i is the host's option guestIds[i]
+  const pendingState = useRef<RoomState | null>(null); // a wheel update that arrived mid-spin
+  const pendingVetoes = useRef<string[]>([]); // vetoes that arrived mid-spin (host)
+
   const requestId = useRef(0);
   // The wheel's current rotation, mirrored so handleSpin can read it synchronously.
   const rotationRef = useRef(0);
@@ -228,6 +249,30 @@ export default function Home() {
   // Everything is read in the browser, after hydration, so the server HTML never differs.
   useEffect(() => {
     function openSharedLink() {
+      if (window.location.hash.startsWith("#r=")) {
+        const code = parseRoomHash(window.location.hash);
+        if (!code) {
+          clearShareHash();
+          setLinkProblem(true);
+          return;
+        }
+        requestId.current++;
+        if (spinTimer.current) clearTimeout(spinTimer.current);
+        stopTicks();
+        stopConfetti();
+        setSpinning(false);
+        setHelper("none");
+        setLinkProblem(false);
+        setMode("custom");
+        setOptions([]);
+        setWinner(null);
+        setLoading(null);
+        setError(null);
+        setSharedMode(false);
+        setEditing(false);
+        void startGuest(code);
+        return;
+      }
       if (window.location.hash.startsWith(CUSTOM_HASH)) {
         const items = decodeCustom(window.location.hash);
         if (!items) {
@@ -303,18 +348,7 @@ export default function Home() {
     openSharedLink();
     window.addEventListener("hashchange", openSharedLink);
     return () => window.removeEventListener("hashchange", openSharedLink);
-  }, []);
-
-  // Always call the latest handler (it sees current state) from the shake listener.
-  useEffect(() => {
-    spinIfPossible.current = () => {
-      if (canSpin) handleSpin();
-    };
-  });
-  useEffect(() => {
-    if (!motionOn || !canMotion) return;
-    return listenForShake(() => spinIfPossible.current());
-  }, [motionOn, canMotion]);
+  }, [startGuest]);
 
   // Keep the wheel that is on screen as a share link, so it can be opened again with no connection.
   useEffect(() => {
@@ -574,10 +608,15 @@ export default function Home() {
   }
 
   function handleSpin() {
-    if (spinning || options.length < 2) return;
+    if (spinning || options.length < 2 || inRoomAsGuest) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const ms = reduced ? SPIN_MS_REDUCED : SPIN_MS;
     const index = pickWeighted(weights);
+    if (roomHost) broadcastSpin(options[index].id, SPIN_MS); // guests spin to the same slice, at their own pace
+    runSpin(index, ms, reduced);
+  }
+
+  function runSpin(index: number, ms: number, reduced: boolean) {
     const chosen = options[index];
     const from = rotationRef.current;
     const to = targetRotation(from, index, weights, reduced ? 2 : 5);
@@ -598,7 +637,61 @@ export default function Home() {
       if (getMotion()) landingBuzz();
       if (!sharedMode && !customMode) recordWinner(chosen); // shared wheels have throwaway ids, so they are not remembered
       celebrate();
+      // Anything that arrived from the room while the wheel was turning is applied now.
+      if (pendingState.current) {
+        applyRoomState(pendingState.current);
+        pendingState.current = null;
+      }
+      if (pendingVetoes.current.length) {
+        const late = pendingVetoes.current;
+        pendingVetoes.current = [];
+        setOptions((prev) => prev.filter((p) => p.id === chosen.id || !late.includes(p.id)));
+      }
     }, ms + 60);
+  }
+
+  // --- Live room: what the page does for the room hook ---
+  function applyRoomState(state: RoomState) {
+    const ids = state.options.map((o) => o.id);
+    const changed = ids.join("|") !== guestIds.current.join("|");
+    guestIds.current = ids;
+    const items = state.options.map((o) => ({ name: o.name, weight: o.weight }));
+    setMode("custom");
+    setCustomItems(items);
+    if (changed) {
+      setOptions(customPlaces(items));
+      setWinner(null);
+    }
+    setHelper("none");
+    setSharedMode(false);
+    setEditing(false);
+    setLoading(null);
+    setError(null);
+  }
+
+  function handleLeaveRoom() {
+    const wasGuest = inRoomAsGuest;
+    leaveRoom();
+    clearShareHash();
+    if (wasGuest) {
+      guestIds.current = [];
+      setMode("places");
+      setOptions(placesStash.current);
+      setWinner(null);
+    }
+  }
+
+  // The host has gone but the wheel stays, as an ordinary custom list.
+  function handleKeepRoomWheel() {
+    leaveRoom();
+    clearShareHash();
+    setCustomText(customToText(customItems));
+    setCustomNotes([]);
+  }
+
+  function handleGuestVeto(placeId: string) {
+    const hostId = guestIds.current[Number(placeId.slice("custom-".length))];
+    if (hostId) sendVeto(hostId);
   }
 
   // Confetti from the wheel when it lands (skipped for reduced motion), and make sure the
@@ -723,7 +816,60 @@ export default function Home() {
     () => (coords ? { lat: coords.lat, lon: coords.lon } : null),
     [coords],
   );
-  const canSpin = options.length >= 2 && !spinning && !loading && helper === "none";
+  const inRoomAsGuest = room?.role === "guest";
+  const roomHost = room?.role === "host" && room.status === "live";
+  const canSpin = options.length >= 2 && !spinning && !loading && helper === "none" && !inRoomAsGuest;
+
+  // The wheel as the room sees it. Names are cut to what the protocol allows.
+  const roomOptions = useMemo<RoomOption[]>(
+    () => options.map((o, i) => ({ id: o.id, name: o.name.slice(0, 80), weight: weights[i] ?? 1 })),
+    [options, weights],
+  );
+  const roomOptionsRef = useRef<RoomOption[]>([]);
+  useEffect(() => {
+    roomOptionsRef.current = roomOptions;
+    roomHandlers.current = {
+      getOptions: () => roomOptionsRef.current,
+      onGuestVeto: (id) => {
+        if (spinning) pendingVetoes.current.push(id);
+        else {
+          setOptions((prev) => prev.filter((p) => p.id !== id));
+          setWinner(null);
+        }
+      },
+      onState: (state) => {
+        if (spinning) pendingState.current = state;
+        else applyRoomState(state);
+      },
+      onSpin: (winnerId, hostMs) => {
+        const index = guestIds.current.indexOf(winnerId);
+        if (spinning || index < 0 || index >= options.length) return;
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        runSpin(index, reduced ? SPIN_MS_REDUCED : hostMs, reduced);
+      },
+    };
+  });
+  // The host's wheel changed (and no spin is under way): tell the guests.
+  useEffect(() => {
+    if (roomHost && !spinning) publish(roomOptions);
+  }, [roomHost, spinning, roomOptions, publish]);
+  // Always call the latest handler (it sees current state) from the shake listener.
+  useEffect(() => {
+    spinIfPossible.current = () => {
+      if (canSpin) handleSpin();
+    };
+  });
+  useEffect(() => {
+    if (!motionOn || !canMotion) return;
+    return listenForShake(() => spinIfPossible.current());
+  }, [motionOn, canMotion]);
+
+  // A guest cannot start audio itself: the first tap anywhere unlocks it, so the host's spins are heard.
+  useEffect(() => {
+    if (!inRoomAsGuest) return;
+    window.addEventListener("pointerdown", unlockAudio, { once: true });
+    return () => window.removeEventListener("pointerdown", unlockAudio);
+  }, [inRoomAsGuest]);
   const removedSome = fetched.length > options.length;
 
   // Filter feedback: too few places left after the radius and "Open now" are applied.
@@ -768,6 +914,16 @@ export default function Home() {
 
       <OfflineBanner hasWheel={options.length > 0} onOpenLast={(hash) => (window.location.hash = hash)} />
 
+      {room && (
+        <RoomPanel
+          room={room}
+          canNativeShare={canNativeShare}
+          onLeave={handleLeaveRoom}
+          onKeep={handleKeepRoomWheel}
+          onRetry={() => void startHost()}
+        />
+      )}
+
       {linkProblem && (
         <div
           role="alert"
@@ -805,7 +961,7 @@ export default function Home() {
         </div>
       )}
 
-      {!sharedMode && (
+      {!sharedMode && !inRoomAsGuest && (
         <div role="group" aria-label="What to spin" className="mx-auto flex w-full max-w-md gap-1 rounded-full bg-white/70 p-1 shadow">
           {(
             [
@@ -829,7 +985,7 @@ export default function Home() {
         </div>
       )}
 
-      {customMode && (
+      {customMode && !inRoomAsGuest && (
         <CustomEditor
           text={customText}
           onTextChange={setCustomText}
@@ -995,6 +1151,11 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
+          {inRoomAsGuest ? (
+            <p role="status" className="rounded-full bg-indigo-100 px-6 py-4 text-center font-semibold text-indigo-950">
+              {spinning ? "Spinning…" : winner ? "The host can spin again" : "Waiting for the host to spin…"}
+            </p>
+          ) : (
           <button
             type="button"
             onClick={handleSpin}
@@ -1003,6 +1164,7 @@ export default function Home() {
           >
             {spinning ? "Spinning…" : winner ? "Spin again" : "Spin!"}
           </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -1035,8 +1197,17 @@ export default function Home() {
           {motionNote}
         </p>
 
-        {options.length >= 2 && !spinning && helper === "none" && (
+        {options.length >= 2 && !spinning && helper === "none" && !inRoomAsGuest && (
           <div className="flex flex-wrap justify-center gap-2">
+            {!room && (
+              <button
+                type="button"
+                onClick={() => void startHost()}
+                className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-indigo-900 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+              >
+                👥 Live room
+              </button>
+            )}
             {options.length >= 3 && (
               <button
                 type="button"
@@ -1079,13 +1250,14 @@ export default function Home() {
               rotationRef.current = to;
               setRotation(to);
               setWinner(place);
+              if (roomHost) broadcastSpin(place.id, SPIN_MS); // guests spin to the same result
               if (!sharedMode && !customMode) recordWinner(place);
               celebrate();
             }}
           />
         )}
 
-        {options.length > 0 && (
+        {options.length > 0 && !inRoomAsGuest && (
           <div className="flex w-full max-w-md flex-col items-stretch gap-2">
             <div className="flex flex-col gap-2 sm:flex-row">
               {canNativeShare && (
@@ -1321,15 +1493,28 @@ export default function Home() {
                       <span aria-hidden>{p.id in prefs.favourites ? "★" : "☆"}</span>
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => removeOption(p.id)}
-                    disabled={spinning}
-                    aria-label={`Remove ${p.name}`}
-                    className="flex h-6 w-6 items-center justify-center rounded-full text-indigo-700 hover:bg-red-100 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    ✕
-                  </button>
+                  {inRoomAsGuest ? (
+                    room.canVeto && !spinning && (
+                      <button
+                        type="button"
+                        onClick={() => handleGuestVeto(p.id)}
+                        aria-label={`Veto ${p.name}`}
+                        className="min-h-8 rounded-full bg-red-100 px-2 text-xs font-semibold text-red-800 hover:bg-red-200 focus-visible:outline-2 focus-visible:outline-red-600"
+                      >
+                        🙈 Veto
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(p.id)}
+                      disabled={spinning}
+                      aria-label={`Remove ${p.name}`}
+                      className="flex h-6 w-6 items-center justify-center rounded-full text-indigo-700 hover:bg-red-100 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
