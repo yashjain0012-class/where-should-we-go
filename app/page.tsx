@@ -8,6 +8,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import OfflineBanner from "@/components/OfflineBanner";
 import FiltersPanel from "@/components/FiltersPanel";
 import PrefsPanel from "@/components/PrefsPanel";
+import ShareCardButton from "@/components/ShareCardButton";
 import ResultActions from "@/components/ResultActions";
 import VetoRound from "@/components/VetoRound";
 import Wheel, { SLICE_COLORS } from "@/components/Wheel";
@@ -1145,6 +1146,16 @@ export default function Home() {
                 Open in Google Maps ↗
               </a>
               )}
+              <ShareCardButton
+                key={winner.id}
+                name={winner.name}
+                details={
+                  customMode
+                    ? []
+                    : [...(winner.distance !== undefined ? [`${walkMinutes(winner.distance)} min walk`] : []), ...describeAttrs(winner.attrs)]
+                }
+                colors={SLICE_COLORS}
+              />
               {!sharedMode && !customMode && (
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   <button

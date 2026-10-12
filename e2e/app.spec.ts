@@ -598,6 +598,79 @@ test.describe("installable app and offline", () => {
   });
 });
 
+test.describe("result picture", () => {
+  test("without a share sheet, the picture is downloaded as a 1080 by 1350 PNG", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "canShare", { value: undefined, configurable: true });
+    });
+    await openApp(page);
+    await search(page);
+    const winner = await spinAndWait(page);
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: /Share as picture/ }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^where-should-we-go-[a-z0-9-]+\.png$/);
+    const file = (await download.path())!;
+    await download.saveAs("test-results/result-card.png");
+    const bytes = readFileSync(file);
+    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    expect(bytes.readUInt32BE(16)).toBe(1080); // width and height are in the PNG header
+    expect(bytes.readUInt32BE(20)).toBe(1350);
+    expect(bytes.length).toBeGreaterThan(20_000); // actually drawn, not blank
+    await expect(page.getByText("Picture saved")).toBeVisible();
+    expect(winner.length).toBeGreaterThan(0);
+  });
+
+  test("with a share sheet, the picture is handed to it as a file", async ({ page }) => {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __shared: unknown[] };
+      w.__shared = [];
+      Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+      Object.defineProperty(navigator, "share", {
+        value: async (data: { files: File[]; text: string }) => {
+          w.__shared.push({ names: data.files.map((f) => f.name), types: data.files.map((f) => f.type), sizes: data.files.map((f) => f.size), text: data.text });
+        },
+        configurable: true,
+      });
+    });
+    await openApp(page);
+    await page.getByRole("button", { name: /My own list/ }).click();
+    await page.getByLabel("Your options").fill("Pizza night\nBoard games");
+    await page.getByRole("button", { name: /^Put on the wheel/ }).click();
+    const winner = await spinAndWait(page);
+    await page.getByRole("button", { name: /Share as picture/ }).click();
+    await expect(page.getByText("Shared ✓")).toBeVisible();
+    const shared = (await page.evaluate(() => (window as unknown as { __shared: unknown[] }).__shared)) as {
+      names: string[]; types: string[]; sizes: number[]; text: string;
+    }[];
+    expect(shared).toHaveLength(1);
+    expect(shared[0].types).toEqual(["image/png"]);
+    expect(shared[0].names[0]).toMatch(/\.png$/);
+    expect(shared[0].sizes[0]).toBeGreaterThan(20_000);
+    expect(shared[0].text).toBe(`We're going to ${winner}!`);
+  });
+
+  test("cancelling the share sheet is not an error", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+      Object.defineProperty(navigator, "share", {
+        value: async () => {
+          throw new DOMException("cancelled", "AbortError");
+        },
+        configurable: true,
+      });
+    });
+    await openApp(page);
+    await search(page);
+    await spinAndWait(page);
+    await page.getByRole("button", { name: /Share as picture/ }).click();
+    await expect(page.getByRole("button", { name: /Share as picture/ })).toBeEnabled();
+    await expect(page.getByText(/Couldn't make the picture/)).toHaveCount(0);
+    await expect(page.getByText("Picture saved")).toHaveCount(0);
+  });
+});
+
 test.describe("sharing", () => {
   test("a copied link opens the same wheel in a fresh page without searching again", async ({ page, context }) => {
     await openApp(page);

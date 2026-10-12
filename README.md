@@ -65,6 +65,10 @@ The app is an installable PWA: **Add to Home Screen** (iPhone) or **Install** (C
 - `public/sw.js` is a small service worker, registered in production only: the page is network-first (a new deploy shows straight away) with the last copy as the offline fallback; hashed build files are cache-first; `/api/*` and other origins (map tiles, weather) are never stored.
 - Offline, the app opens, says so, and offers **Open my last wheel**. The last wheel is kept in this browser as the same share link a friend would get (`wsg-last-wheel`), and **Clear my data** deletes it. Spinning the wheel and your own lists work offline; searching and the map need a connection, and if the map's code never downloaded, a short message replaces it instead of an error.
 
+## Share the result as a picture
+
+The result card has **🖼️ Share as picture**: it draws "Let's go to ..." with the wheel, the name and a few facts on a canvas in the browser (1080 × 1350, nothing is uploaded), then opens the phone's share sheet with the image attached, or downloads the PNG where the browser can't share files. The name is wrapped and shrunk to fit (`lib/textWrap.ts`, unit tested).
+
 ## The spin: sound and celebration
 
 - **Ticking sound**, generated in the browser with the Web Audio API (no audio files): a short filtered-noise click plus a soft knock for each slice that passes the pointer. The wheel spins with a CSS cubic-bezier; `lib/ticks.ts` holds that same curve and works out when each slice boundary crosses the pointer, and the ticks are scheduled on the audio clock at exactly those moments, so they slow down with the wheel. The 🔊/🔇 button next to Spin mutes it, and the choice is remembered. Browsers only allow sound after a tap, so audio starts from the Spin tap.
@@ -113,6 +117,7 @@ npm run test:spin      # weighted picks (20,000 spins), landing under the pointe
 npm run test:prefs     # remembered favourites, hidden places and history: validation, limits, clearing
 npm run test:custom    # custom lists: parsing, weights, limits, share links (valid, tampered, forged)
 npm run test:bracket   # head-to-head: byes, n-1 votes for any size, immutability, every option can win
+npm run test:card      # text wrapping for the result picture, safe file names
 npm run test:attrs     # tags, cuisine and diet filters, wheel selection
 npm run test:links     # walking time, directions links, calendar file
 npm run test:weather   # weather codes and rain-soon logic
@@ -143,6 +148,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `lib/prefs.ts`, `components/PrefsPanel.tsx`: favourites, hidden places and history, kept in this browser
 - `lib/share.ts`: share-link encode, decode and validation
 - `app/manifest.ts`, `public/sw.js`, `lib/iconArt.tsx`, `lib/lastWheel.ts`, `components/OfflineBanner.tsx`: installable app and offline support
+- `lib/resultCard.ts`, `lib/textWrap.ts`, `components/ShareCardButton.tsx`: the shareable result picture
 - `lib/bracket.ts`, `components/Duel.tsx`, `components/VetoRound.tsx`: head-to-head tournament and pass-the-phone vetoes
 - `lib/custom.ts`, `components/CustomEditor.tsx`: the "My own list" mode and its share links
 - `lib/ticks.ts`, `lib/sound.ts`, `lib/celebrate.ts`: tick timing, synthesized sound and mute switch, confetti
