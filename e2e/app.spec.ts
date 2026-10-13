@@ -1011,3 +1011,17 @@ test.describe("celebration", () => {
     expect(await confetti(page)).toBe(false);
   });
 });
+
+test.describe("security headers", () => {
+  test("every page and API answer carries them, and the service worker is never cached", async ({ request }) => {
+    for (const path of ["/", "/api/peer-config", "/manifest.webmanifest"]) {
+      const h = (await request.get(path)).headers();
+      expect(h["x-content-type-options"], path).toBe("nosniff");
+      expect(h["x-frame-options"], path).toBe("DENY");
+      expect(h["referrer-policy"], path).toBe("strict-origin-when-cross-origin");
+      expect(h["content-security-policy"], path).toContain("frame-ancestors 'none'");
+      expect(h["permissions-policy"], path).toContain("camera=()");
+    }
+    expect((await request.get("/sw.js")).headers()["cache-control"]).toContain("no-store");
+  });
+});
