@@ -1,5 +1,7 @@
 # Where should we go? One-pager
 
+Live: https://where-should-we-go-pink.vercel.app · Code: github.com/yashjain0012-class/where-should-we-go (private)
+
 ## The problem
 
 Groups of friends, couples and colleagues lose a surprising amount of time to "where should we eat?" The answer is rarely hard to find; it is hard to **agree on**. One person suggests, others say "I don't mind", nobody commits, and the loudest or most patient person wins. People who feel unheard stay quiet. It matters because it happens every week for almost everyone, and it quietly wears on friendships and plans.
@@ -64,6 +66,6 @@ No paid service, no API key, no AI service inside the app, and no account to cre
 
 ## Working with AI
 
-- **What the AI did:** wrote almost all the code, tests and documentation, in small steps with a commit after each working one (about 30 commits): the wheel and sound, the OpenStreetMap queries, filters, favourites, live rooms, the offline app, dark mode and Hindi. It also found and fixed its own bugs, for example a race in opening-hours loading that a CI run exposed, and a real contrast problem that the automated accessibility check found in dark mode. It wrote the tests alongside each feature (over 220 unit checks and 154 browser runs).
+- **What the AI did:** wrote almost all the code, tests and documentation, in small steps with a commit after each working one (about 30 small commits, each built, tested and pushed before the next): the wheel and sound, the OpenStreetMap queries, filters, favourites, live rooms, the offline app, dark mode and Hindi. It also found and fixed its own bugs, for example a race in opening-hours loading that a CI run exposed, and a real contrast problem that the automated accessibility check found in dark mode. It wrote the tests alongside each feature (over 220 unit checks and 156 browser runs).
 - **What I did:** (edit to be true) chose the idea and the scope, answered the planning questions (balanced features, free services only, a few days, minimal intervention), decided the rules (no accounts, no keys, privacy first), tried it, and approved each stage.
 - **What I'd do differently:** (edit to be true) get a real person's feedback after the *first* working version instead of after everything was built; write the one-page description first so the scope stays smaller; and ask the AI to run `/security-review` from the repo folder at the start of each stage rather than once at the end.

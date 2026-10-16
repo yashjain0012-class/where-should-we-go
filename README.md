@@ -4,7 +4,9 @@ A decision spinner for groups. Search a neighbourhood (or use your location), pi
 
 **No login, no database, no paid APIs or keys.** Everything runs in the browser or through thin proxies to free services (OpenStreetMap's Nominatim and Overpass for places, Open-Meteo for weather, PeerJS's public broker to introduce devices in a live room).
 
+- **Live:** https://where-should-we-go-pink.vercel.app
 - Try it in 6 minutes: [docs/DEMO.md](docs/DEMO.md)
+- The one-page write-up: [docs/ONE-PAGER.md](docs/ONE-PAGER.md)
 - Why it is built this way: [docs/DECISIONS.md](docs/DECISIONS.md)
 
 ## What it does
@@ -190,7 +192,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. Node 22 or newer. No environment variables are needed; to point live rooms at your own PeerJS server set `PEER_HOST` (and optionally `PEER_PORT`, `PEER_PATH`, `PEER_SECURE`), and `npm run e2e` starts a local one for you.
 
 ```bash
 npm run test:share     # share links: round trips, tampered links, privacy snapping, link-length budget
@@ -218,7 +220,7 @@ npm run test:unit   # every pure module: over 220 checks (see the list under Dev
 npm run e2e         # builds, then runs the Playwright suite on a desktop and a phone profile
 ```
 
-The end-to-end suite (`e2e/`, 154 runs across a desktop and a Pixel 7 profile) drives the real production build in Chromium with the OpenStreetMap and weather services **mocked** (so it is fast, offline and deterministic) and a **local PeerJS server** for live rooms. It covers search and categories, spinning (the result must be the slice under the pointer, including uneven slices), every filter, favourites and history, custom lists and share links (valid, broken and tampered), vetoes and head-to-head, two-browser live rooms, the installable manifest and offline reopening, the result picture, vibration and shake, dark mode, km and miles, Hindi, and automated WCAG 2.1 AA checks with axe-core on every screen state in both themes.
+The end-to-end suite (`e2e/`, 156 runs across a desktop and a Pixel 7 profile) drives the real production build in Chromium with the OpenStreetMap and weather services **mocked** (so it is fast, offline and deterministic) and a **local PeerJS server** for live rooms. It covers search and categories, spinning (the result must be the slice under the pointer, including uneven slices), every filter, favourites and history, custom lists and share links (valid, broken and tampered), vetoes and head-to-head, two-browser live rooms, the installable manifest and offline reopening, the result picture, vibration and shake, dark mode, km and miles, Hindi, and automated WCAG 2.1 AA checks with axe-core on every screen state in both themes.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, lint, the unit tests, a production build and the end-to-end suite on every push and pull request.
 
@@ -249,6 +251,7 @@ Import the repo on Vercel. No environment variables are needed.
 - `components/FiltersPanel.tsx`: distance slider and Open now toggle
 - `lib/maps.ts`: Google Maps link builder
 - `lib/categories.ts`: category to OpenStreetMap tag mapping
-- `app/api/geocode`, `app/api/places`: the OSM proxies
+- `app/api/geocode`, `app/api/places`, `app/api/weather`: the OSM and Open-Meteo proxies
+- `docs/`: `DEMO.md` (click-through script), `DECISIONS.md` (design records), `ONE-PAGER.md` (submission write-up)
 
 Place data © OpenStreetMap contributors.

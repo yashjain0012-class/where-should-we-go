@@ -901,25 +901,25 @@ test.describe("distance units", () => {
     test("miles are the default, the slider and messages follow, and the choice is remembered", async ({ page }) => {
       await openApp(page);
       await search(page);
-      await expect(page.getByRole("button", { name: /^Distances in miles/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Distances in miles/ })).toBeVisible();
       await expect(page.getByRole("slider")).toHaveAttribute("aria-valuetext", "0.6 mi");
       await expect(page.getByText("0.3 mi", { exact: true })).toBeVisible(); // the slider's left end (500 m)
       await expect(page.getByText("3.1 mi", { exact: true })).toBeVisible(); // and right end (5 km)
 
-      await page.getByRole("button", { name: /^Distances in miles/ }).click();
+      await page.getByRole("button", { name: /Distances in miles/ }).click();
       await expect(page.getByRole("slider")).toHaveAttribute("aria-valuetext", "1 km");
       await page.reload();
       await page.waitForSelector("body[data-hydrated=true]");
-      await expect(page.getByRole("button", { name: /^Distances in kilometres/ })).toBeVisible(); // remembered over the locale default
+      await expect(page.getByRole("button", { name: /Distances in kilometres/ })).toBeVisible(); // remembered over the locale default
     });
   });
 
   test("elsewhere, kilometres are the default, and what is searched is always in metres", async ({ page, api }) => {
     await openApp(page);
     await search(page);
-    await expect(page.getByRole("button", { name: /^Distances in kilometres/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Distances in kilometres/ })).toBeVisible();
     await expect(page.getByRole("slider")).toHaveAttribute("aria-valuetext", "1 km");
-    await page.getByRole("button", { name: /^Distances in kilometres/ }).click();
+    await page.getByRole("button", { name: /Distances in kilometres/ }).click();
     await expect(page.getByRole("slider")).toHaveAttribute("aria-valuetext", "0.6 mi");
     expect(api.places.at(-1)!.searchParams.get("radius")).toBe("1000"); // the unit never reaches the search
   });
